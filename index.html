@@ -1173,6 +1173,7 @@
             <span class="val" id="balanceVal">500.000 $ARMY</span>
           </div>
           <button class="btn small faucet" id="faucetBtn" type="button" title="Faucet de demostración: suma $ARMY simulados a tu balance para poder probar las compras">Obtener $ARMY de prueba</button>
+          <button class="btn small danger" id="resetProgressBtn" type="button" title="Borra el progreso guardado en este navegador y reinicia la demo desde cero (500.000 $ARMY)">Borrar progreso</button>
           <div class="wallet-zone">
             <button class="btn wallet" id="walletBtn" type="button" title="Conecta tu wallet Phantom en devnet (solo lectura: no se firma ninguna transacción)">Conectar wallet</button>
             <div class="wallet-panel" id="walletPanel" hidden>
@@ -4248,6 +4249,166 @@
       });
       $("pvpChallengeBtn").addEventListener("click", pvpChallenge);
 
+      // ---------- Guardado persistente en el navegador (localStorage) ----------
+      // Todo el progreso de la demo se guarda en el navegador del jugador bajo
+      // una clave versionada: al cerrar y volver a abrir la página, el juego se
+      // reanuda tal cual (balance, colecciones, TEAMs, taller, bloqueos, PvP).
+      // Los temporizadores se guardan como MARCAS DE TIEMPO (repairUntil en cada
+      // transporte y lockedUntil en cada TEAM): al cargar, settleRepairs() y
+      // settleTeamLocks() —que ya corren en refreshAll— aplican de inmediato los
+      // vencimientos cumplidos mientras la página estaba cerrada.
+      // El guardado es SOLO de la demo: la wallet devnet conectada sigue siendo
+      // solo lectura y aparte (su saldo real nunca se mezcla con este estado).
+      // Si el guardado está corrupto, incompleto o es de una versión vieja
+      // incompatible, se descarta y la demo arranca de cero, sin romper la página.
+      var SAVE_KEY = "armary-save-v1";
+      var SAVE_VERSION = 1;
+      var saveTimer = null;
+      var lastSaveJson = "";
+      var saveWiped = false; // Tras «Borrar progreso» no se vuelve a guardar nada
+
+      function snapshotGame() {
+        function stripCrate(c) {
+          // Solo se guardan las cajas SIN ABRIR (su contenido se decide al
+          // abrirlas). Las reveladas son una muestra transitoria, como hoy, y
+          // las que se están abriendo vuelven como cerradas: su NFT aún no se
+          // había incorporado a la colección.
+          return { id: c.id, kind: c.kind, status: "closed", result: null, reveal: null };
+        }
+        return {
+          saveVersion: SAVE_VERSION,
+          savedAt: Date.now(),
+          state: { balance: state.balance, earned: state.earned, completed: state.completed },
+          soldiers: SOLDIERS,
+          transportNfts: TRANSPORT_NFTS,
+          transportNftSeq: transportNftSeq,
+          transportTypeSeq: transportTypeSeq,
+          teams: teams,
+          teamSeq: teamSeq,
+          selectedTeamId: selectedTeamId,
+          mintState: {
+            pity: mintState.pity, seq: mintState.seq, crateSeq: mintState.crateSeq,
+            qty: { soldado: mintState.qty.soldado, transporte: mintState.qty.transporte }
+          },
+          collection: collection,
+          crates: {
+            soldado: crates.soldado.filter(function (c) { return c.status !== "revealed"; }).map(stripCrate),
+            transporte: crates.transporte.filter(function (c) { return c.status !== "revealed"; }).map(stripCrate)
+          },
+          duelRecord: duelRecord,
+          duelRecordTeam: duelRecordTeam,
+          pvpHistory: pvpHistory,
+          pvpDaily: pvpDaily,
+          activityHtml: $("activityList") ? $("activityList").innerHTML : ""
+        };
+      }
+      function saveGame() {
+        if (saveWiped) return;
+        try {
+          var json = JSON.stringify(snapshotGame());
+          if (json === lastSaveJson) return; // Sin cambios: no se reescribe
+          lastSaveJson = json;
+          localStorage.setItem(SAVE_KEY, json);
+        } catch (e) {
+          // Almacenamiento no disponible (modo privado, cuota…): el juego
+          // sigue funcionando en memoria, como antes del guardado.
+        }
+      }
+      function saveGameSoon() {
+        if (saveTimer) return;
+        saveTimer = window.setTimeout(function () { saveTimer = null; saveGame(); }, 250);
+      }
+      function isValidSave(d) {
+        return !!d && typeof d === "object"
+          && d.saveVersion === SAVE_VERSION
+          && !!d.state && typeof d.state.balance === "number" && isFinite(d.state.balance)
+          && typeof d.state.earned === "number" && typeof d.state.completed === "number"
+          && Array.isArray(d.soldiers) && Array.isArray(d.transportNfts)
+          && Array.isArray(d.teams) && Array.isArray(d.collection)
+          && !!d.mintState && typeof d.mintState.pity === "number"
+          && !!d.crates && Array.isArray(d.crates.soldado) && Array.isArray(d.crates.transporte);
+      }
+      function discardSave() {
+        try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+        lastSaveJson = "";
+      }
+      function loadGame() {
+        var raw = null;
+        try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { return; }
+        if (!raw) return; // Sin guardado: arranque normal en 500.000 $ARMY
+        var d = null;
+        try { d = JSON.parse(raw); } catch (e) { discardSave(); return; }
+        if (!isValidSave(d)) { discardSave(); return; }
+        try {
+          state.balance = d.state.balance;
+          state.earned = d.state.earned;
+          state.completed = d.state.completed;
+          SOLDIERS = d.soldiers;
+          TRANSPORT_NFTS = d.transportNfts;
+          if (typeof d.transportNftSeq === "number") transportNftSeq = d.transportNftSeq;
+          if (d.transportTypeSeq && typeof d.transportTypeSeq === "object") transportTypeSeq = d.transportTypeSeq;
+          teams = d.teams;
+          if (typeof d.teamSeq === "number") teamSeq = d.teamSeq;
+          selectedTeamId = typeof d.selectedTeamId === "string" ? d.selectedTeamId : null;
+          mintState.pity = d.mintState.pity;
+          if (typeof d.mintState.seq === "number") mintState.seq = d.mintState.seq;
+          if (typeof d.mintState.crateSeq === "number") mintState.crateSeq = d.mintState.crateSeq;
+          if (d.mintState.qty) {
+            if (typeof d.mintState.qty.soldado === "number") mintState.qty.soldado = d.mintState.qty.soldado;
+            if (typeof d.mintState.qty.transporte === "number") mintState.qty.transporte = d.mintState.qty.transporte;
+          }
+          collection = d.collection;
+          crates.soldado = d.crates.soldado;
+          crates.transporte = d.crates.transporte;
+          if (typeof d.duelRecord === "number") duelRecord = d.duelRecord;
+          if (typeof d.duelRecordTeam === "string") duelRecordTeam = d.duelRecordTeam;
+          if (Array.isArray(d.pvpHistory)) pvpHistory = d.pvpHistory;
+          if (d.pvpDaily && typeof d.pvpDaily.count === "number" && typeof d.pvpDaily.date === "string") pvpDaily = d.pvpDaily;
+          if (typeof d.activityHtml === "string" && d.activityHtml) {
+            $("activityList").innerHTML = d.activityHtml;
+            $("activityEmpty").style.display = "none";
+          }
+          lastSaveJson = raw;
+        } catch (e) {
+          // Guardado a medias o con forma inesperada: se descarta y, solo si
+          // de verdad desapareció de localStorage, se recarga una vez para
+          // arrancar con el estado inicial limpio (sin riesgo de bucle).
+          discardSave();
+          var gone = false;
+          try { gone = !localStorage.getItem(SAVE_KEY); } catch (e2) { gone = false; }
+          if (gone) window.location.reload();
+        }
+      }
+      // Guardado al salir o al ocultar la pestaña, por si quedó algo pendiente
+      window.addEventListener("beforeunload", saveGame);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "hidden") saveGame();
+      });
+
+      // ---------- Borrar progreso ----------
+      // Confirmación en dos pasos dentro del propio botón (sin diálogos del
+      // navegador): el primer pulso lo arma y el segundo, dentro de 4 s,
+      // borra el guardado y reinicia la demo en 500.000 $ARMY.
+      var resetArmTimer = null;
+      $("resetProgressBtn").addEventListener("click", function () {
+        var btn = $("resetProgressBtn");
+        if (btn.getAttribute("data-arm") === "1") {
+          if (resetArmTimer) { window.clearTimeout(resetArmTimer); resetArmTimer = null; }
+          saveWiped = true; // Que ni el beforeunload vuelva a guardar el estado viejo
+          if (saveTimer) { window.clearTimeout(saveTimer); saveTimer = null; }
+          discardSave();
+          window.location.reload();
+          return;
+        }
+        btn.setAttribute("data-arm", "1");
+        btn.textContent = "¿Seguro? Pulsa otra vez para borrar";
+        resetArmTimer = window.setTimeout(function () {
+          resetArmTimer = null;
+          btn.removeAttribute("data-arm");
+          btn.textContent = "Borrar progreso";
+        }, 4000);
+      });
+
       // ---------- Refresco global ----------
       function refreshAll() {
         settleRepairs();
@@ -4261,9 +4422,15 @@
         renderPvpBet();
         updateStats();
         renderMintControls();
+        saveGameSoon();
       }
 
       // ---------- Arranque ----------
+      // Si hay un guardado válido en el navegador, se reanuda tal cual; si no,
+      // la demo arranca como siempre en 500.000 $ARMY. Los vencimientos de
+      // taller y de bloqueos cumplidos mientras tanto los aplica refreshAll
+      // (settleRepairs / settleTeamLocks) nada más cargar.
+      loadGame();
       refreshAll();
       renderPvpRanking();
       renderPity();
@@ -4293,6 +4460,10 @@
         var repairsDone = settleRepairs();
         var locksDone = settleTeamLocks();
         if (repairsDone || locksDone) refreshAll();
+        // Red de seguridad del guardado: recoge cualquier cambio de estado
+        // que no pase por refreshAll (récords de duelo, historial PvP…).
+        // saveGame no reescribe si el estado no cambió.
+        saveGame();
       }, 1000);
     </script>
   </body>
