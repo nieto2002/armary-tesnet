@@ -166,6 +166,11 @@
       }
       .wallet-note[hidden] { display: none; }
       .wallet-note a { color: var(--gold); font-weight: 700; }
+      .active-user {
+        font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em;
+        color: var(--hero-muted); white-space: nowrap;
+      }
+      .active-user b { font-family: "Press Start 2P", monospace; font-size: 0.68rem; font-weight: 400; color: var(--gold); }
       @media (max-width: 640px) { .wallet-zone { align-items: flex-start; } }
 
       .btn {
@@ -1175,6 +1180,7 @@
           <button class="btn small faucet" id="faucetBtn" type="button" title="Faucet de demostración: suma $ARMY simulados a tu balance para poder probar las compras">Obtener $ARMY de prueba</button>
           <button class="btn small danger" id="resetProgressBtn" type="button" title="Borra el progreso guardado en este navegador y reinicia la demo desde cero (500.000 $ARMY)">Borrar progreso</button>
           <div class="wallet-zone">
+            <span class="active-user" id="activeUserTag">USUARIO ACTIVO: <b>Invitado</b></span>
             <button class="btn wallet" id="walletBtn" type="button" title="Conecta tu wallet Phantom en devnet (solo lectura: no se firma ninguna transacción)">Conectar wallet</button>
             <div class="wallet-panel" id="walletPanel" hidden>
               <span class="wallet-tag">WALLET DEVNET · SIN VALOR REAL</span>
@@ -2971,6 +2977,18 @@
         return null;
       }
       function walletShort(addr) { return addr.slice(0, 4) + "…" + addr.slice(-4); }
+      // Indicador de usuario activo: «Invitado» sin wallet, o la dirección
+      // truncada de la wallet cuyo guardado está cargado (loadedSavePk, que
+      // define la sección de guardado más abajo).
+      function activeUserShow() {
+        var el = $("activeUserTag");
+        if (!el) return;
+        var b = el.querySelector("b");
+        if (b) b.textContent = loadedSavePk ? walletShort(loadedSavePk) : "Invitado";
+        el.title = loadedSavePk
+          ? "El progreso se está guardando en el usuario de la wallet " + loadedSavePk
+          : "El progreso se está guardando en el usuario invitado (sin wallet)";
+      }
       function walletNoteShow(html) {
         var n = $("walletNote");
         n.innerHTML = html;
@@ -2989,6 +3007,10 @@
         btn.hidden = false;
         btn.disabled = false;
         btn.textContent = "Conectar wallet";
+        activeUserShow();
+        // Si el guardado cargado era el de una wallet, al desconectar se
+        // guarda ese progreso bajo su clave y se vuelve al usuario invitado.
+        if (loadedSavePk) switchToWalletSave(null);
       }
       function walletShowConnected() {
         state.wallet = true;
@@ -2997,6 +3019,7 @@
         var addrEl = $("walletAddr");
         addrEl.textContent = walletShort(walletPk);
         addrEl.title = walletPk;
+        activeUserShow();
       }
       // Lee SOL y $ARMY de la dirección conectada por el RPC oficial de devnet.
       // Si la cuenta de token asociada no existe, el saldo $ARMY es 0 (no error).
@@ -3044,6 +3067,11 @@
       function walletOnConnected(pk) {
         walletPk = pk;
         walletNoteHide();
+        // La wallet ES el usuario: si la cuenta conectada no es la del
+        // guardado cargado, se guarda el progreso actual bajo su clave y se
+        // recarga con el guardado de esta wallet (de cero si no tenía).
+        // switchToWalletSave está definida en la sección de guardado.
+        if (pk !== loadedSavePk && switchToWalletSave(pk)) return;
         walletShowConnected();
         walletRefreshBalances();
       }
@@ -4257,12 +4285,40 @@
       // transporte y lockedUntil en cada TEAM): al cargar, settleRepairs() y
       // settleTeamLocks() —que ya corren en refreshAll— aplican de inmediato los
       // vencimientos cumplidos mientras la página estaba cerrada.
-      // El guardado es SOLO de la demo: la wallet devnet conectada sigue siendo
-      // solo lectura y aparte (su saldo real nunca se mezcla con este estado).
+      // LA WALLET ES EL USUARIO: sin wallet se juega como invitado bajo la
+      // clave «armary-save-v1»; con una wallet conectada, el guardado activo
+      // es «armary-save-v1-<dirección completa>», uno por wallet, y conectar
+      // NO traslada el progreso invitado (cada wallet arranca de cero en
+      // 500.000 $ARMY si no tenía guardado). La última wallet conectada se
+      // recuerda en «armary-active-wallet» para saber qué guardado cargar al
+      // arrancar, antes de que Phantom responda. La conexión devnet sigue
+      // siendo solo lectura y aparte: su saldo real nunca se mezcla con este
+      // estado, y el guardado es solo local (sin backend ni firmas).
       // Si el guardado está corrupto, incompleto o es de una versión vieja
       // incompatible, se descarta y la demo arranca de cero, sin romper la página.
       var SAVE_KEY = "armary-save-v1";
+      var ACTIVE_WALLET_KEY = "armary-active-wallet";
       var SAVE_VERSION = 1;
+      var loadedSavePk = null; // Wallet del guardado cargado (null = invitado)
+      try { loadedSavePk = localStorage.getItem(ACTIVE_WALLET_KEY) || null; } catch (e) { loadedSavePk = null; }
+      function activeSaveKey() { return loadedSavePk ? SAVE_KEY + "-" + loadedSavePk : SAVE_KEY; }
+      // Cambia el usuario activo: guarda el progreso actual bajo la clave del
+      // usuario saliente, recuerda la wallet entrante (null = invitado) y
+      // recarga para arrancar limpio con el guardado de ese usuario. Devuelve
+      // false si el marcador no se pudo persistir y verificar (almacenamiento
+      // no disponible): en ese caso no se recarga para no entrar en bucle y
+      // se sigue con el guardado ya cargado.
+      function switchToWalletSave(pk) {
+        saveGame();
+        try {
+          if (pk) localStorage.setItem(ACTIVE_WALLET_KEY, pk);
+          else localStorage.removeItem(ACTIVE_WALLET_KEY);
+          var back = localStorage.getItem(ACTIVE_WALLET_KEY) || null;
+          if (back !== (pk || null)) return false;
+        } catch (e) { return false; }
+        window.location.reload();
+        return true;
+      }
       var saveTimer = null;
       var lastSaveJson = "";
       var saveWiped = false; // Tras «Borrar progreso» no se vuelve a guardar nada
@@ -4308,7 +4364,7 @@
           var json = JSON.stringify(snapshotGame());
           if (json === lastSaveJson) return; // Sin cambios: no se reescribe
           lastSaveJson = json;
-          localStorage.setItem(SAVE_KEY, json);
+          localStorage.setItem(activeSaveKey(), json);
         } catch (e) {
           // Almacenamiento no disponible (modo privado, cuota…): el juego
           // sigue funcionando en memoria, como antes del guardado.
@@ -4329,12 +4385,12 @@
           && !!d.crates && Array.isArray(d.crates.soldado) && Array.isArray(d.crates.transporte);
       }
       function discardSave() {
-        try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+        try { localStorage.removeItem(activeSaveKey()); } catch (e) {}
         lastSaveJson = "";
       }
       function loadGame() {
         var raw = null;
-        try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { return; }
+        try { raw = localStorage.getItem(activeSaveKey()); } catch (e) { return; }
         if (!raw) return; // Sin guardado: arranque normal en 500.000 $ARMY
         var d = null;
         try { d = JSON.parse(raw); } catch (e) { discardSave(); return; }
@@ -4375,7 +4431,7 @@
           // arrancar con el estado inicial limpio (sin riesgo de bucle).
           discardSave();
           var gone = false;
-          try { gone = !localStorage.getItem(SAVE_KEY); } catch (e2) { gone = false; }
+          try { gone = !localStorage.getItem(activeSaveKey()); } catch (e2) { gone = false; }
           if (gone) window.location.reload();
         }
       }
@@ -4431,6 +4487,7 @@
       // taller y de bloqueos cumplidos mientras tanto los aplica refreshAll
       // (settleRepairs / settleTeamLocks) nada más cargar.
       loadGame();
+      activeUserShow();
       refreshAll();
       renderPvpRanking();
       renderPity();
