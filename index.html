@@ -1025,6 +1025,31 @@
         position: absolute; width: 46px; height: 46px; z-index: 6;
         transform: translate(-50%, -50%); pointer-events: none; display: none;
       }
+      /* PvP móvil: palanca virtual (abajo-izquierda) y botón de disparo
+         (abajo-derecha) sobre la galería. Solo se muestran en modo táctil y
+         durante la partida (conteo y juego); semitransparentes para no tapar
+         los blancos. El contenedor no captura toques: solo la palanca y el
+         botón. */
+      .duel-touch { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+      .duel-touch[hidden] { display: none; }
+      .duel-stick {
+        position: absolute; left: 16px; bottom: 16px; width: 118px; height: 118px;
+        border-radius: 50%; pointer-events: auto; touch-action: none;
+        background: rgba(10, 14, 6, 0.38); border: 2px solid rgba(238, 243, 218, 0.45);
+      }
+      .duel-knob {
+        position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+        margin: -26px 0 0 -26px; border-radius: 50%; pointer-events: none;
+        background: rgba(238, 243, 218, 0.4); border: 2px solid rgba(238, 243, 218, 0.65);
+      }
+      .duel-fire {
+        position: absolute; right: 16px; bottom: 22px; width: 88px; height: 88px;
+        border-radius: 50%; pointer-events: auto; touch-action: none; cursor: pointer;
+        background: rgba(163, 22, 13, 0.45); border: 3px solid rgba(255, 120, 100, 0.75);
+        display: flex; align-items: center; justify-content: center; padding: 0;
+      }
+      .duel-fire:active { background: rgba(163, 22, 13, 0.72); }
+      .duel-fire svg { width: 44px; height: 44px; display: block; }
       .duel-count {
         position: absolute; inset: 0; z-index: 7; display: flex; align-items: center; justify-content: center;
         pointer-events: none;
@@ -1525,6 +1550,16 @@
             </div>
             <p id="duelBetDetailLine"></p>
             <button class="btn" type="button" id="duelBetAccept">Aceptar</button>
+          </div>
+          <div class="duel-touch" id="duelTouch" hidden aria-hidden="true">
+            <div class="duel-stick" id="duelStick"><span class="duel-knob" id="duelKnob"></span></div>
+            <button class="duel-fire" id="duelFire" type="button" aria-label="Disparar">
+              <svg viewBox="0 0 48 48" shape-rendering="crispEdges" aria-hidden="true">
+                <circle cx="24" cy="24" r="14" fill="none" stroke="#ffe9e4" stroke-width="3" />
+                <path d="M24 1v11M24 36v11M1 24h11M36 24h11" stroke="#ffe9e4" stroke-width="3" />
+                <rect x="22" y="22" width="4" height="4" fill="#ffe9e4" />
+              </svg>
+            </button>
           </div>
         </div><!-- /.duel-range -->
         </div><!-- /.pvp-main -->
@@ -3524,8 +3559,10 @@
       // puntos, rompe la racha y cuenta como fallo en las estadísticas, con
       // flotante «−5s» en rojo y explosión oscura/roja. Al terminar, resultados con
       // precisión (aciertos / disparos), mejor racha y récord personal, que
-      // vive en `duelRecord` (estado de la demo, solo en memoria). Funciona con
-      // mouse y con toque: todo pasa por pointerdown sobre el área de tiro.
+      // vive en `duelRecord` (estado de la demo, solo en memoria). Entrada:
+      // con mouse, la mira sigue al puntero y el clic dispara; en táctil, la
+      // mira se mueve con una palanca virtual y solo dispara el botón de
+      // disparo, en la posición de la mira (ver «PvP móvil» más abajo).
       var DUEL_MS = 45000;           // duración de la partida
       var DUEL_COUNT_MS = 3000;      // conteo 3-2-1 previo al inicio
       var DUEL_GOLD_LIFE = 800;      // vida del blanco dorado (ms), igual en todas las fases
@@ -3552,7 +3589,79 @@
       var DUEL_TW = 68, DUEL_TH = 89; // tamaño del blanco (con su barra de vida)
       var duelRecord = 0;
       var duelRecordTeam = ""; // TEAM con el que se logró el récord (para el RANKING)
-      var duel = null; // { score, hits, misses, shots, streak, best, targets, startAt, endAt, lastSpawn, phase, phaseMsgUntil, raf }
+      var duel = null; // { score, hits, misses, shots, streak, best, targets, startAt, endAt, lastSpawn, phase, phaseMsgUntil, raf, frameAt }
+      // ---------- PvP móvil: controles táctiles (palanca + botón de disparo) ----------
+      // En PC nada cambia: la mira sigue al mouse y el clic dispara. En
+      // táctil, tocar un blanco ya NO dispara: la misma mira se mueve con una
+      // palanca virtual (abajo-izquierda) y solo dispara el botón
+      // (abajo-derecha), en la posición donde esté la mira; disparar fuera de
+      // un blanco cuenta como fallo (−25 y cuenta como disparo), igual que el
+      // clic en vacío. El modo se decide por la entrada en uso: arranca según
+      // el puntero principal del dispositivo y cambia con cada evento según
+      // su pointerType (en híbridos manda la última entrada usada).
+      var DUEL_AIM_SPEED = 640;       // velocidad máxima de la mira con la palanca (px/s)
+      var DUEL_STICK_DEADZONE = 0.12; // inclinación mínima de la palanca para mover la mira
+      var DUEL_TOUCH_MARGIN = 8;      // ayuda al disparar en móvil: px extra alrededor del blanco
+      var duelTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+      var duelAim = { x: 0, y: 0 };   // posición de la mira dentro de la galería (px)
+      var duelStick = { id: null, x: 0, y: 0 }; // toque de la palanca (pointerId) y su inclinación −1..1
+      function duelPlaceCross() {
+        var cross = $("duelCross");
+        cross.style.left = duelAim.x + "px";
+        cross.style.top = duelAim.y + "px";
+        cross.style.display = duel ? "block" : "none";
+      }
+      // Los controles táctiles solo se ven en modo táctil y con la partida en
+      // curso (conteo y juego); en los overlays de inicio/resultados se
+      // ocultan para no tapar sus botones.
+      function duelSyncTouchUI() {
+        var show = duelTouch && !!duel;
+        $("duelTouch").hidden = !show;
+        if (show) duelPlaceCross();
+      }
+      function duelStickReset() {
+        duelStick.id = null; duelStick.x = 0; duelStick.y = 0;
+        $("duelKnob").style.transform = "";
+      }
+      function duelSetTouch(on) {
+        if (duelTouch !== on) {
+          duelTouch = on;
+          if (!on) duelStickReset();
+        }
+        duelSyncTouchUI();
+      }
+      // Mueve la mira según la inclinación de la palanca: la velocidad crece
+      // con la inclinación (curva suave para control fino cerca del centro) y
+      // al soltar la palanca la mira se queda donde está.
+      function duelAimStep(dtMs) {
+        if (!duelTouch) return;
+        var mag = Math.sqrt(duelStick.x * duelStick.x + duelStick.y * duelStick.y);
+        if (mag <= DUEL_STICK_DEADZONE) return;
+        var t = (mag - DUEL_STICK_DEADZONE) / (1 - DUEL_STICK_DEADZONE);
+        var speed = DUEL_AIM_SPEED * Math.pow(t, 1.35);
+        var range = $("duelRange");
+        duelAim.x = Math.max(0, Math.min(range.clientWidth, duelAim.x + (duelStick.x / mag) * speed * dtMs / 1000));
+        duelAim.y = Math.max(0, Math.min(range.clientHeight, duelAim.y + (duelStick.y / mag) * speed * dtMs / 1000));
+        duelPlaceCross();
+      }
+      // Blanco bajo la mira al disparar en móvil: el que contenga el punto en
+      // su caja ampliada por DUEL_TOUCH_MARGIN (si hay varios, el de centro
+      // más cercano). Sin margen NO es autoapuntado: fuera de la caja ampliada
+      // es fallo, igual que en PC.
+      function duelTouchPick(x, y) {
+        var best = null, bestD = Infinity;
+        for (var i = 0; i < duel.targets.length; i++) {
+          var t = duel.targets[i], el = t.el;
+          var l = el.offsetLeft - DUEL_TOUCH_MARGIN;
+          var tp = el.offsetTop - DUEL_TOUCH_MARGIN;
+          if (x < l || x > l + el.offsetWidth + DUEL_TOUCH_MARGIN * 2 ||
+              y < tp || y > tp + el.offsetHeight + DUEL_TOUCH_MARGIN * 2) continue;
+          var cx = el.offsetLeft + el.offsetWidth / 2, cy = el.offsetTop + 28;
+          var d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+          if (d < bestD) { bestD = d; best = t; }
+        }
+        return best;
+      }
 
       function duelTargetSVG(kind) {
         if (kind === "trap") {
@@ -3694,6 +3803,11 @@
       }
       function duelLoop(now) {
         if (!duel) return;
+        // En móvil la mira se mueve con la palanca también durante el conteo,
+        // para llegar al primer blanco ya apuntando.
+        var dt = Math.min(64, now - (duel.frameAt || now));
+        duel.frameAt = now;
+        duelAimStep(dt);
         var timeEl = $("duelTime");
         if (now < duel.startAt) {
           // Conteo 3-2-1: un número grande por segundo; aún no hay blancos ni
@@ -3767,12 +3881,19 @@
         duel = { score: 0, hits: 0, misses: 0, shots: 0, streak: 0, best: 0,
                  targets: [], startAt: now + DUEL_COUNT_MS,
                  endAt: now + DUEL_COUNT_MS + DUEL_MS, lastSpawn: now,
-                 phase: 0, phaseMsgUntil: 0, raf: 0, bet: betCtx || null };
+                 phase: 0, phaseMsgUntil: 0, raf: 0, frameAt: now, bet: betCtx || null };
         $("duelIdle").hidden = true;
         $("duelBetIdle").hidden = true;
         $("duelResults").hidden = true;
         $("duelBetResults").hidden = true;
         duelSetTabsEnabled(false);
+        // En móvil la mira arranca en el centro de la galería y los
+        // controles táctiles aparecen con la partida (conteo incluido).
+        var rangeEl = $("duelRange");
+        duelAim.x = rangeEl.clientWidth / 2;
+        duelAim.y = rangeEl.clientHeight / 2;
+        duelStickReset();
+        duelSyncTouchUI();
         $("duelTime").textContent = "45";
         $("duelTime").classList.remove("low");
         duelHud();
@@ -3815,6 +3936,8 @@
         $("duelTime").textContent = "0";
         $("duelRitmo").textContent = DUEL_PHASES[0].ritmo;
         $("duelCross").style.display = "none";
+        duelStickReset();
+        $("duelTouch").hidden = true;
         duelSetTabsEnabled(true);
       }
       function duelStop() {
@@ -3839,50 +3962,32 @@
         $("duelStreak").textContent = "0";
         $("duelRitmo").textContent = DUEL_PHASES[0].ritmo;
         $("duelCross").style.display = "none";
+        duelStickReset();
+        $("duelTouch").hidden = true;
         duelSetTabsEnabled(true);
       }
-      (function () {
-        var range = $("duelRange");
-        var cross = $("duelCross");
-        function moveCross(x, y) {
-          cross.style.left = x + "px";
-          cross.style.top = y + "px";
-          cross.style.display = duel ? "block" : "none";
-        }
-        range.addEventListener("pointermove", function (ev) {
-          var r = range.getBoundingClientRect();
-          moveCross(ev.clientX - r.left, ev.clientY - r.top);
-        });
-        range.addEventListener("pointerleave", function () { cross.style.display = "none"; });
-        range.addEventListener("pointerdown", function (ev) {
-          if (!duel || performance.now() < duel.startAt) return; // durante el conteo no se dispara
-          ev.preventDefault();
-          var r = range.getBoundingClientRect();
-          var x = ev.clientX - r.left, y = ev.clientY - r.top;
-          moveCross(x, y);
-          var node = ev.target, t = null;
-          while (node && node !== range) {
-            if (node._duelTarget) { t = node._duelTarget; break; }
-            node = node.parentNode;
-          }
-          duel.shots++;
-          if (t) {
-            var cx = t.el.offsetLeft + t.el.offsetWidth / 2;
-            var cy = t.el.offsetTop + 28;
-            if (t.trap) {
-              // Trampa acertada: −5 s al temporizador, sin cambio de puntos.
-              // Cuenta como fallo en las estadísticas y rompe la racha de
-              // combo. Si el tiempo llega a 0 o menos, la partida termina: se
-              // deja un instante para que se vean el «−5s» y la explosión y el
-              // bucle (duelLoop) cierra la partida al agotarse el tiempo.
-              duelRemoveTarget(t);
-              duel.misses++;
-              duel.streak = 0;
-              duel.endAt -= DUEL_TRAP_PENALTY_MS;
-              if (duel.endAt <= performance.now()) duel.endAt = performance.now() + 500;
-              duelFloat(cx, cy, "−5s", "trap");
-              duelBoom(cx, cy, "trap");
-            } else {
+      // Resolución de UN disparo en (x, y) contra el blanco `t` (o null si
+      // cayó en vacío). Es la misma lógica para el clic de PC y para el botón
+      // de disparo en móvil: acierto normal/dorado, trampa y fallo en vacío.
+      function duelResolveShot(x, y, t) {
+        duel.shots++;
+        if (t) {
+          var cx = t.el.offsetLeft + t.el.offsetWidth / 2;
+          var cy = t.el.offsetTop + 28;
+          if (t.trap) {
+            // Trampa acertada: −5 s al temporizador, sin cambio de puntos.
+            // Cuenta como fallo en las estadísticas y rompe la racha de
+            // combo. Si el tiempo llega a 0 o menos, la partida termina: se
+            // deja un instante para que se vean el «−5s» y la explosión y el
+            // bucle (duelLoop) cierra la partida al agotarse el tiempo.
+            duelRemoveTarget(t);
+            duel.misses++;
+            duel.streak = 0;
+            duel.endAt -= DUEL_TRAP_PENALTY_MS;
+            if (duel.endAt <= performance.now()) duel.endAt = performance.now() + 500;
+            duelFloat(cx, cy, "−5s", "trap");
+            duelBoom(cx, cy, "trap");
+          } else {
             var pts = t.golden ? 250 : 100;
             duelRemoveTarget(t);
             duel.score += pts;
@@ -3900,14 +4005,93 @@
               duel.score += 100;
               duelFloat(cx, Math.max(24, cy - 36), "+100 COMBO", "combo");
             }
-            }
-          } else {
-            duel.misses++;
-            duel.streak = 0;
-            duel.score -= 25;
-            duelFloat(x, y, "−25", "minus");
           }
-          duelHud();
+        } else {
+          duel.misses++;
+          duel.streak = 0;
+          duel.score -= 25;
+          duelFloat(x, y, "−25", "minus");
+        }
+        duelHud();
+      }
+      (function () {
+        var range = $("duelRange");
+        var cross = $("duelCross");
+        function moveCross(x, y) {
+          duelAim.x = x;
+          duelAim.y = y;
+          cross.style.left = x + "px";
+          cross.style.top = y + "px";
+          cross.style.display = duel ? "block" : "none";
+        }
+        range.addEventListener("pointermove", function (ev) {
+          // La entrada en uso manda: un toque activa el modo táctil (la mira
+          // solo se mueve con la palanca); el mouse o el lápiz, el modo PC.
+          if (ev.pointerType === "touch") { duelSetTouch(true); return; }
+          duelSetTouch(false);
+          var r = range.getBoundingClientRect();
+          moveCross(ev.clientX - r.left, ev.clientY - r.top);
+        });
+        range.addEventListener("pointerleave", function () {
+          if (!duelTouch) cross.style.display = "none"; // en móvil la mira se queda donde está
+        });
+        range.addEventListener("pointerdown", function (ev) {
+          if (ev.pointerType === "touch") duelSetTouch(true); else duelSetTouch(false);
+          if (!duel || performance.now() < duel.startAt) return; // durante el conteo no se dispara
+          if (duelTouch) return; // en móvil tocar la galería (o un blanco) NO dispara: solo el botón
+          ev.preventDefault();
+          var r = range.getBoundingClientRect();
+          var x = ev.clientX - r.left, y = ev.clientY - r.top;
+          moveCross(x, y);
+          var node = ev.target, t = null;
+          while (node && node !== range) {
+            if (node._duelTarget) { t = node._duelTarget; break; }
+            node = node.parentNode;
+          }
+          duelResolveShot(x, y, t);
+        });
+        // ----- Controles táctiles: palanca y botón de disparo -----
+        // Multitáctil: cada control sigue su propio pointerId, así la
+        // palanca (pulgar izquierdo) y el disparo (pulgar derecho) funcionan
+        // a la vez. Los pointerdown de ambos controles suben hasta el handler
+        // de la galería, que en modo táctil no dispara: no hay doble disparo.
+        var stickEl = $("duelStick"), knobEl = $("duelKnob");
+        function stickFromEvent(ev) {
+          var r = stickEl.getBoundingClientRect();
+          var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          var dx = ev.clientX - cx, dy = ev.clientY - cy;
+          var max = r.width / 2;
+          var mag = Math.sqrt(dx * dx + dy * dy);
+          if (mag > max) { dx = dx / mag * max; dy = dy / mag * max; }
+          duelStick.x = dx / max;
+          duelStick.y = dy / max;
+          knobEl.style.transform = "translate(" + (dx * 0.55) + "px," + (dy * 0.55) + "px)";
+        }
+        stickEl.addEventListener("pointerdown", function (ev) {
+          duelSetTouch(true);
+          if (duelStick.id !== null) return; // ya hay un pulgar en la palanca
+          duelStick.id = ev.pointerId;
+          if (stickEl.setPointerCapture) { try { stickEl.setPointerCapture(ev.pointerId); } catch (e) {} }
+          ev.preventDefault();
+          stickFromEvent(ev);
+        });
+        stickEl.addEventListener("pointermove", function (ev) {
+          if (ev.pointerId !== duelStick.id) return;
+          ev.preventDefault();
+          stickFromEvent(ev);
+        });
+        function stickRelease(ev) {
+          if (ev.pointerId !== duelStick.id) return;
+          duelStickReset(); // al soltar, la mira se detiene y se queda donde está
+        }
+        stickEl.addEventListener("pointerup", stickRelease);
+        stickEl.addEventListener("pointercancel", stickRelease);
+        $("duelFire").addEventListener("pointerdown", function (ev) {
+          duelSetTouch(true);
+          ev.preventDefault();
+          if (!duel || performance.now() < duel.startAt) return; // durante el conteo no se dispara
+          // Dispara en la posición de la mira, con el pequeño margen de ayuda.
+          duelResolveShot(duelAim.x, duelAim.y, duelTouchPick(duelAim.x, duelAim.y));
         });
         $("duelPlay").addEventListener("click", function () { duelStart(null); });
         $("duelAgain").addEventListener("click", function () { duelStart(null); });
