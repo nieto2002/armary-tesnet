@@ -1043,13 +1043,39 @@
         background: rgba(238, 243, 218, 0.4); border: 2px solid rgba(238, 243, 218, 0.65);
       }
       .duel-fire {
-        position: absolute; right: 16px; bottom: 22px; width: 88px; height: 88px;
+        position: absolute; right: 16px; bottom: 22px; width: 72px; height: 72px;
         border-radius: 50%; pointer-events: auto; touch-action: none; cursor: pointer;
         background: rgba(163, 22, 13, 0.45); border: 3px solid rgba(255, 120, 100, 0.75);
         display: flex; align-items: center; justify-content: center; padding: 0;
       }
       .duel-fire:active { background: rgba(163, 22, 13, 0.72); }
-      .duel-fire svg { width: 44px; height: 44px; display: block; }
+      .duel-fire svg { width: 36px; height: 36px; display: block; }
+      /* PvP: botón de pantalla completa (esquina superior derecha de la
+         galería, sobre los overlays para poder entrar/salir en cualquier
+         momento de la vista). Al activarla, el escenario (HUD + galería)
+         llena la pantalla y la galería crece para aprovechar el alto; los
+         controles táctiles viven dentro de la galería, así que siguen
+         funcionando igual. Sin soporte (p. ej. Safari de iPhone) el botón
+         se oculta desde JS y no estorba. */
+      .duel-fs {
+        position: absolute; top: 10px; right: 10px; z-index: 9;
+        width: 40px; height: 40px; padding: 0; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(10, 14, 6, 0.45); border: 2px solid rgba(238, 243, 218, 0.45);
+        color: #eef3da;
+      }
+      .duel-fs:hover { background: rgba(10, 14, 6, 0.65); }
+      .duel-fs svg { width: 22px; height: 22px; display: block; }
+      .duel-fs .ic-compress { display: none; }
+      .duel-fs.is-fs .ic-expand { display: none; }
+      .duel-fs.is-fs .ic-compress { display: block; }
+      .duel-stage:fullscreen, .duel-stage:-webkit-full-screen {
+        background: var(--bg); padding: 12px;
+        display: flex; flex-direction: column;
+      }
+      .duel-stage:fullscreen .duel-range, .duel-stage:-webkit-full-screen .duel-range {
+        flex: 1 1 auto; height: auto;
+      }
       .duel-count {
         position: absolute; inset: 0; z-index: 7; display: flex; align-items: center; justify-content: center;
         pointer-events: none;
@@ -1502,6 +1528,7 @@
 
         <div class="pvp-arena">
         <div class="pvp-main">
+        <div class="duel-stage" id="duelStage">
         <div class="duel-hud">
           <div class="duel-stat"><span class="num" id="duelTime">45</span><span class="lbl">Segundos</span></div>
           <div class="duel-stat"><span class="num gold" id="duelScore">0</span><span class="lbl">Puntos</span></div>
@@ -1512,6 +1539,10 @@
 
         <div class="duel-range" id="duelRange">
           <p class="range-sign">GALERÍA DE TIRO · ARMARY</p>
+          <button class="duel-fs" id="duelFsBtn" type="button" aria-label="Pantalla completa" title="Pantalla completa">
+            <svg class="ic-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+            <svg class="ic-compress" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+          </button>
           <svg class="duel-cross" id="duelCross" viewBox="0 0 48 48" shape-rendering="crispEdges" aria-hidden="true">
             <circle cx="24" cy="24" r="14" fill="none" stroke="#ff5347" stroke-width="3" />
             <path d="M24 1v11M24 36v11M1 24h11M36 24h11" stroke="#ff5347" stroke-width="3" />
@@ -1562,6 +1593,7 @@
             </button>
           </div>
         </div><!-- /.duel-range -->
+        </div><!-- /.duel-stage -->
         </div><!-- /.pvp-main -->
 
         <aside class="pvp-ranking" aria-label="Ranking de mejores puntajes">
@@ -3599,8 +3631,8 @@
       // clic en vacío. El modo se decide por la entrada en uso: arranca según
       // el puntero principal del dispositivo y cambia con cada evento según
       // su pointerType (en híbridos manda la última entrada usada).
-      var DUEL_AIM_SPEED = 640;       // velocidad máxima de la mira con la palanca (px/s)
-      var DUEL_STICK_DEADZONE = 0.12; // inclinación mínima de la palanca para mover la mira
+      var DUEL_AIM_SPEED = 500;       // velocidad máxima de la mira con la palanca (px/s)
+      var DUEL_STICK_DEADZONE = 0.15; // inclinación mínima de la palanca para mover la mira
       var DUEL_TOUCH_MARGIN = 8;      // ayuda al disparar en móvil: px extra alrededor del blanco
       var duelTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
       var duelAim = { x: 0, y: 0 };   // posición de la mira dentro de la galería (px)
@@ -4093,6 +4125,46 @@
           // Dispara en la posición de la mira, con el pequeño margen de ayuda.
           duelResolveShot(duelAim.x, duelAim.y, duelTouchPick(duelAim.x, duelAim.y));
         });
+        // ----- Pantalla completa del PvP (HUD + galería) -----
+        // El botón vive dentro de la galería: sus eventos se detienen para
+        // que pulsar «pantalla completa» nunca cuente como disparo (en PC
+        // el pointerdown de la galería dispara). Al entrar en pantalla
+        // completa va el escenario entero (#duelStage), así que el HUD y
+        // los controles táctiles (palanca y disparo, dentro de la galería)
+        // siguen visibles y funcionando. Con prefijo webkit para los
+        // navegadores móviles que lo usan; si el navegador no soporta
+        // pantalla completa en elementos (Safari de iPhone), el botón se
+        // oculta y el juego queda como siempre.
+        var fsBtn = $("duelFsBtn"), fsStage = $("duelStage");
+        var fsSupported = !!(fsStage && (fsStage.requestFullscreen || fsStage.webkitRequestFullscreen));
+        if (!fsSupported) {
+          fsBtn.style.display = "none";
+        } else {
+          var duelSyncFsBtn = function () {
+            var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            fsBtn.classList.toggle("is-fs", isFs);
+            fsBtn.setAttribute("aria-label", isFs ? "Salir de pantalla completa" : "Pantalla completa");
+            fsBtn.setAttribute("title", isFs ? "Salir de pantalla completa" : "Pantalla completa");
+          };
+          fsBtn.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+          fsBtn.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            try {
+              if (document.fullscreenElement || document.webkitFullscreenElement) {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+              } else if (fsStage.requestFullscreen) {
+                var p = fsStage.requestFullscreen();
+                if (p && p.catch) p.catch(function () {});
+              } else if (fsStage.webkitRequestFullscreen) {
+                fsStage.webkitRequestFullscreen();
+              }
+            } catch (e) { /* sin soporte real: no pasa nada */ }
+          });
+          document.addEventListener("fullscreenchange", duelSyncFsBtn);
+          document.addEventListener("webkitfullscreenchange", duelSyncFsBtn);
+          duelSyncFsBtn();
+        }
         $("duelPlay").addEventListener("click", function () { duelStart(null); });
         $("duelAgain").addEventListener("click", function () { duelStart(null); });
         $("duelBetAccept").addEventListener("click", function () {
