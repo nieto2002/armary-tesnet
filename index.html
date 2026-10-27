@@ -1030,7 +1030,7 @@
          durante la partida (conteo y juego); semitransparentes para no tapar
          los blancos. El contenedor no captura toques: solo la palanca y el
          botón. */
-      .duel-touch { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+      .duel-touch { position: absolute; inset: 0; z-index: 6; pointer-events: none; touch-action: none; }
       .duel-touch[hidden] { display: none; }
       .duel-stick {
         position: absolute; left: 16px; bottom: 16px; width: 118px; height: 118px;
@@ -3632,7 +3632,7 @@
       // el puntero principal del dispositivo y cambia con cada evento según
       // su pointerType (en híbridos manda la última entrada usada).
       var DUEL_AIM_SPEED = 560;       // velocidad máxima de la mira con la palanca (px/s)
-      var DUEL_STICK_DEADZONE = 0.15; // inclinación mínima de la palanca para mover la mira
+      var DUEL_STICK_DEADZONE = 0.10; // inclinación mínima de la palanca para mover la mira
       var DUEL_TOUCH_MARGIN = 8;      // ayuda al disparar en móvil: px extra alrededor del blanco
       var duelTouch = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
       var duelAim = { x: 0, y: 0 };   // posición de la mira dentro de la galería (px)
@@ -3663,14 +3663,14 @@
         duelSyncTouchUI();
       }
       // Mueve la mira según la inclinación de la palanca: la velocidad crece
-      // con la inclinación (curva suave para control fino cerca del centro) y
+      // con la inclinación (respuesta lineal, proporcional a la inclinación) y
       // al soltar la palanca la mira se queda donde está.
       function duelAimStep(dtMs) {
         if (!duelTouch) return;
         var mag = Math.sqrt(duelStick.x * duelStick.x + duelStick.y * duelStick.y);
         if (mag <= DUEL_STICK_DEADZONE) return;
         var t = (mag - DUEL_STICK_DEADZONE) / (1 - DUEL_STICK_DEADZONE);
-        var speed = DUEL_AIM_SPEED * Math.pow(t, 1.35);
+        var speed = DUEL_AIM_SPEED * Math.pow(t, 1.0);
         var range = $("duelRange");
         duelAim.x = Math.max(0, Math.min(range.clientWidth, duelAim.x + (duelStick.x / mag) * speed * dtMs / 1000));
         duelAim.y = Math.max(0, Math.min(range.clientHeight, duelAim.y + (duelStick.y / mag) * speed * dtMs / 1000));
