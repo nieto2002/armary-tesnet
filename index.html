@@ -1161,6 +1161,13 @@
       .pvp-bet-box { margin-bottom: 14px; }
       .pvp-bet-box .qty-row { margin: 10px 0 4px; }
       .pvp-challenge { width: 100%; padding: 13px; font-size: 1.02rem; margin-bottom: 20px; }
+      /* PvP asincrónico: aviso de sincronización y lista «Mis retos» */
+      #pvpAsyncNote .chance { margin-bottom: 14px; }
+      #pvpMyDuels { margin-bottom: 20px; }
+      .pvp-myduels-title { font-family: "Press Start 2P", monospace; font-size: 0.78rem; color: var(--accent); margin: 0 0 10px; }
+      #pvpMyDuels .activity li { flex-wrap: wrap; gap: 8px; }
+      .pvp-cancel { padding: 5px 10px; font-size: 0.78rem; }
+      .activity .tag.wait { background: var(--warn-edge); }
       #pvpBetResult { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
       #pvpBetResult .result { display: block; }
       /* PvP: panel lateral RANKING — mejor puntaje en una sola partida (Top 10).
@@ -1514,7 +1521,7 @@
       <!-- ======== Vista: PvP ======== -->
       <section class="view" id="view-pvp" aria-label="PvP">
         <h2 class="section-title">PVP</h2>
-        <p class="section-sub">Los duelos de Armary se ganan con <b>habilidad</b>, no con suerte: un minijuego de <b>tiro al blanco</b> donde manda tu puntería. Hay dos modos: <b>Modo práctica</b> — gratis, sin equipo, sin apuesta ni rival, solo tú contra el reloj — y <b>Duelo con apuesta</b>: eliges un TEAM, apuestas $ARMY y juegas la misma partida; al terminar, un rival de tu <b>bracket</b> presenta su puntaje y gana el mayor (en esta demo el rival se simula al terminar tu partida). Tu TEAM solo define tu <b>poder</b> y tu bracket: dentro del duelo, un equipo débil con un jugador hábil le puede ganar a una ballena torpe.</p>
+        <p class="section-sub">Los duelos de Armary se ganan con <b>habilidad</b>, no con suerte: un minijuego de <b>tiro al blanco</b> donde manda tu puntería. Hay dos modos: <b>Modo práctica</b> — gratis, sin equipo, sin apuesta ni rival, solo tú contra el reloj — y <b>Duelo con apuesta</b>: eliges un TEAM, apuestas $ARMY y juegas la misma partida contra un <b>jugador real por turnos</b> — al pulsar «Buscar rival» te emparejas con el reto en espera más antiguo de tu <b>bracket</b> y apuesta y juegas contra su puntaje; si no hay ningún reto esperando, tu puntaje queda como reto en espera hasta 24 h para el próximo jugador. Gana el mayor puntaje (en empate, la mejor precisión). Tu TEAM solo define tu <b>poder</b> y tu bracket: dentro del duelo, un equipo débil con un jugador hábil le puede ganar a una ballena torpe.</p>
 
         <div class="pvp-modes" role="group" aria-label="Modo de juego PvP">
           <button class="menu-btn active" type="button" id="pvpTabPractice">Modo práctica</button>
@@ -1536,11 +1543,18 @@
               <span style="font-weight:700">$ARMY</span>
             </div>
             <span class="calc" id="pvpBetBreakdown"></span>
-            <span class="calc">Al pulsar «Retar», tu apuesta se descuenta del balance al momento. Si sales de la vista a mitad de la partida, el duelo se cancela y se te devuelve la apuesta íntegra, sin consumo de munición y sin contar para el límite diario.</span>
+            <span class="calc">Al pulsar «Buscar rival» juegas tu partida: si hay un reto en espera de tu bracket y apuesta, te emparejas con él; si no, tu puntaje queda como reto en espera hasta 24 h. La apuesta se descuenta al <b>completar</b> tu partida; si sales de la vista a mitad, no se descuenta nada, no se consume munición y el reto reclamado se libera.</span>
           </div>
           <div class="chance" id="pvpDailyLine" style="margin-bottom:14px"></div>
           <div id="pvpGuard"></div>
-          <button class="btn pvp-challenge" type="button" id="pvpChallengeBtn">Retar a un rival</button>
+          <button class="btn pvp-challenge" type="button" id="pvpChallengeBtn">Buscar rival</button>
+          <div id="pvpAsyncNote"></div>
+          <div id="pvpMyDuels" hidden>
+            <h3 class="pvp-myduels-title">MIS RETOS</h3>
+            <section class="activity" aria-label="Mis retos de duelo">
+              <ul id="pvpMyDuelsList"></ul>
+            </section>
+          </div>
         </div>
 
         <div class="pvp-arena">
@@ -1627,7 +1641,7 @@
           <h2 class="section-title">HISTORIAL DE DUELOS</h2>
           <p class="section-sub" id="pvpRecordLine">Registro: 0 victorias · 0 derrotas · 0 empates — todavía no has jugado ningún duelo con apuesta.</p>
           <section class="activity" aria-label="Historial de duelos con apuesta">
-            <p class="empty" id="pvpHistoryEmpty">Todavía no has jugado duelos con apuesta. Configura tu primer duelo arriba: elige TEAM, apuesta y pulsa «Retar a un rival».</p>
+            <p class="empty" id="pvpHistoryEmpty">Todavía no has jugado duelos con apuesta. Configura tu primer duelo arriba: elige TEAM, apuesta y pulsa «Buscar rival».</p>
             <ul id="pvpHistoryList"></ul>
           </section>
         </div>
@@ -1772,6 +1786,19 @@
 
       function $(id) { return document.getElementById(id); }
       function fmt(n) { return n.toLocaleString("es-VE"); }
+      // Escape para interpolar en innerHTML datos que no escribió este
+      // jugador (p. ej. el nombre del TEAM o el bracket guardados por otro
+      // jugador en un reto de la colección «duels»): sin esto, un nombre
+      // con marcas HTML se ejecutaría en el navegador de quien lo ve.
+      function escHtml(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;";
+        });
+      }
+      // fmt tolerante: fuerza a número lo que venga de documentos ajenos.
+      function fmtNum(v) { var n = Number(v); return fmt(isFinite(n) ? n : 0); }
+      // Dirección truncada segura para mostrar (o «Rival» si no es texto).
+      function pvpWalletTxt(a) { return typeof a === "string" && a.length > 8 ? walletShort(a) : "Rival"; }
       function soldierById(id) { return SOLDIERS.filter(function (s) { return s.id === id; })[0]; }
       function transportById(id) { return TRANSPORTS.filter(function (t) { return t.id === id; })[0]; }
       function teamById(id) { return teams.filter(function (t) { return t.id === id; })[0]; }
@@ -1957,8 +1984,12 @@
         // de vista desaparecen de la zona (el inventario no se toca).
         if (typeof clearRevealedCrates === "function") clearRevealedCrates();
         // Si hay una partida de tiro al blanco en curso y se sale de PvP, se
-        // cancela (si era un duelo con apuesta, duelStop devuelve la apuesta).
+        // cancela (si era un duelo con apuesta, duelStop libera el reto
+        // reclamado; la apuesta no se había descontado todavía).
         if (name !== "pvp" && typeof duelStop === "function") duelStop();
+        // Al entrar a PvP se revisan los duelos asincrónicos propios:
+        // premios por cobrar y retos vencidos (sección de duelos con apuesta).
+        if (name === "pvp" && typeof pvpDuelsSync === "function") pvpDuelsSync();
         Array.prototype.forEach.call(document.querySelectorAll(".menu-btn[data-view]"), function (b) {
           b.classList.toggle("active", b.getAttribute("data-view") === name);
         });
@@ -3168,6 +3199,9 @@
         // guardado en la nube de esta dirección (sección Firebase).
         cloudRefreshStatus();
         if (fbUser) cloudLoadForWallet(pk);
+        // Y se revisan los duelos asincrónicos propios: premios por cobrar
+        // y retos vencidos (sección de duelos con apuesta).
+        if (typeof pvpDuelsSync === "function") pvpDuelsSync();
       }
       function walletBindEvents(provider) {
         if (walletEventsBound || !provider || typeof provider.on !== "function") return;
@@ -3979,9 +4013,9 @@
         renderPvpRanking();
         $("duelRecordLine").textContent = "Récord personal: " + duelRecord + " puntos";
         if (d.bet) {
-          // Duelo con apuesta: se simula el rival y se resuelve el duelo
-          // (pozo, munición, contador diario, historial).
-          resolveBetDuel(d, acc);
+          // Duelo con apuesta asincrónico: se registra el reto en la nube o
+          // se resuelve el reto reclamado (sección de duelos con apuesta).
+          resolveAsyncDuel(d, acc);
         } else {
           $("duelResScore").textContent = d.score;
           $("duelResHits").textContent = d.hits;
@@ -4005,11 +4039,13 @@
         var d = duel;
         duel = null;
         if (d.bet) {
-          // Salir de la vista a mitad de un duelo con apuesta lo CANCELA: se
-          // devuelve la apuesta íntegra al balance, sin consumo de munición
-          // y sin contar para el límite diario (no entra en el historial).
-          state.balance += d.bet.amount;
-          updateStats();
+          // Salir de la vista a mitad de un duelo con apuesta lo CANCELA.
+          // En el flujo asincrónico la apuesta todavía NO se ha descontado
+          // (se descuenta solo al completar la partida), así que no hay
+          // nada que devolver ni munición que reponer, y no cuenta para el
+          // límite diario. Si se había reclamado el reto de otro jugador,
+          // se libera: vuelve a «waiting» sin rival asignado.
+          if (d.bet.duelId && typeof pvpReleaseMatch === "function") pvpReleaseMatch(d.bet.duelId);
         }
         duelClearField();
         duelShowIdle();
@@ -4212,7 +4248,7 @@
         });
       })();
 
-      // ---------- PvP: sistema de duelos con apuesta ----------
+      // ---------- PvP: duelos con apuesta ASINCRÓNICOS (rivales reales) ----------
       // Sobre el mismo minijuego de tiro al blanco del modo práctica. El TEAM
       // solo define el PODER y el BRACKET del jugador; el duelo lo decide la
       // habilidad (puntaje y, en empate, precisión), nunca el azar del equipo.
@@ -4222,9 +4258,24 @@
       //   Brackets por poder: Bronce <200 · Plata 200–449 · Oro 450–799 ·
       //   Diamante 800+. Apuestas: 1.000 / 5.000 / 10.000 $ARMY; pozo = 2×
       //   apuesta; el ganador cobra el 95% y el 5% va al pool de recompensas.
-      // En esta demo el rival se simula al terminar la partida del jugador,
-      // dentro de su bracket: puntaje Bronce 1500–3500 · Plata 2500–4500 ·
-      // Oro 3500–5500 · Diamante 4500–6500, y precisión 70–95%.
+      // Los duelos son contra jugadores REALES por turnos (no simultáneos) y
+      // viven en Firestore, colección «duels»: al pulsar «Buscar rival» se
+      // reclama el reto en espera más antiguo del mismo bracket y apuesta
+      // (transacción; si otro lo reclamó antes, se reintenta con el
+      // siguiente, hasta 3 intentos) y se juega la partida; si no hay
+      // ninguno, la propia partida se convierte en reto en espera al
+      // completarla. La apuesta y la munición se descuentan SOLO al
+      // completar la partida; cancelar a mitad no cuesta nada y libera el
+      // reto reclamado. Quien completa el emparejamiento resuelve el reto en
+      // su documento, pero NADIE toca el balance de otro: cada jugador cobra
+      // su parte en su propio guardado (reclamación protegida por
+      // appliedChallenger / appliedMatcher) al entrar a la vista PvP, al
+      // conectar la wallet o al iniciar sesión con Google. Un reto en espera
+      // vence a las 24 h y la apuesta vuelve íntegra. El contador diario
+      // (máx. 10) cuenta los duelos RESUELTOS, en ambos roles. Requisito:
+      // sesión de Google Y wallet conectada; la práctica sigue abierta sin
+      // requisitos. Todo con $ARMY demo: las apuestas con $ARMY real
+      // necesitarían escrow en cadena, fuera de alcance aquí.
       var PVP_BET_LEVELS = [1000, 5000, 10000];
       var PVP_BRACKETS = [
         { name: "Bronce", cls: "b-bronce", maxPower: 199, scoreMin: 1500, scoreMax: 3500, powMin: 60, powMax: 199 },
@@ -4232,7 +4283,6 @@
         { name: "Oro", cls: "b-oro", maxPower: 799, scoreMin: 3500, scoreMax: 5500, powMin: 450, powMax: 799 },
         { name: "Diamante", cls: "b-diamante", maxPower: Infinity, scoreMin: 4500, scoreMax: 6500, powMin: 800, powMax: 1150 }
       ];
-      var PVP_RIVAL_NAMES = ["Comandante Vega", "Sargento Ríos", "Capitana Luna", "Coronel Fénix", "Teniente Sombra", "Mayor Caza", "Sargento Trueno", "Capitán Ónix", "Comandante Brasa", "Teniente Eco", "Coronel Viento", "Sargento Pólvora"];
       // ---------- PvP: RANKING de mejores puntajes ----------
       // Top 10 ordenado por el mejor puntaje en UNA sola partida (nunca el
       // acumulado). En esta demo sin servidor la tabla se siembra con
@@ -4279,9 +4329,9 @@
         $("pvpRankList").innerHTML = rows.map(function (r, i) {
           return '<li class="rank-row' + (r.me ? " me" : "") + '">' +
             '<span class="rank-pos p' + (i + 1) + '">#' + (i + 1) + "</span>" +
-            '<span class="rank-who"><span class="rank-name">' + r.name + "</span>" +
-            '<span class="rank-team">' + r.team + "</span></span>" +
-            '<span class="rank-score">' + fmt(r.score) + "</span></li>";
+            '<span class="rank-who"><span class="rank-name">' + escHtml(r.name) + "</span>" +
+            '<span class="rank-team">' + escHtml(r.team) + "</span></span>" +
+            '<span class="rank-score">' + fmtNum(r.score) + "</span></li>";
         }).join("");
         $("pvpRankNote").style.display = duelRecord > 0 ? "none" : "block";
       }
@@ -4290,6 +4340,11 @@
       var pvpBetAmount = PVP_BET_LEVELS[0];
       var pvpHistory = []; // { rival, bracket, outcome: "win"|"loss"|"tie", bet, net, teamName }
       var pvpHasResult = false;
+      var PVP_DUEL_TTL_MS = 24 * 60 * 60 * 1000; // Un reto en espera vence a las 24 h
+      var PVP_MAX_WAITING = 3; // Anti-spam: máximo de retos propios en espera a la vez
+      var myDuelsCache = []; // Retos de la nube donde participo: [{ id, d }]
+      var pvpSearching = false; // Buscando/reclamando un reto en la nube
+      var duelSyncInFlight = false; // Revisión de duelos propios en curso
       // Límite diario de duelos con apuesta: máximo PVP_DAILY_LIMIT por día
       // de calendario (cuenta demo, solo en memoria). Solo cuentan los
       // duelos COMPLETADOS (victoria, derrota o empate); los cancelados a
@@ -4337,8 +4392,6 @@
         if (teamAmmo(team) < cost) return "no tiene municiones suficientes: tiene " + fmt(teamAmmo(team)) + " y el duelo consume " + cost + " (cómpralas en su tarjeta, en la ventana Team)";
         return null;
       }
-      function pvpRandInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
-
       function renderPvpBet() {
         // Contador diario de duelos con apuesta (se reinicia al cambiar de día)
         var todayCount = pvpDuelsToday();
@@ -4346,8 +4399,8 @@
         $("pvpDailyLine").innerHTML =
           'Duelos hoy: <span class="pct">' + todayCount + '/' + PVP_DAILY_LIMIT + '</span>' +
           '<span class="calc">' + (dailyFull
-            ? 'Límite diario de 10 duelos alcanzado: mañana podrás retar de nuevo. El modo práctica sigue ilimitado.'
-            : 'Duelos con apuesta completados hoy. El límite se reinicia al cambiar de día; el modo práctica no cuenta y sigue ilimitado.') + '</span>';
+            ? 'Límite diario de 10 duelos alcanzado: mañana podrás buscar rival de nuevo. El modo práctica sigue ilimitado.'
+            : 'Duelos con apuesta resueltos hoy: un reto en espera no cuenta hasta que se resuelve. El límite se reinicia al cambiar de día; el modo práctica no cuenta y sigue ilimitado.') + '</span>';
         var sel = $("pvpTeamSel");
         var eligible = teams.filter(function (t) { return !pvpTeamBlocker(t); });
         var current = teamById(pvpSelTeamId);
@@ -4358,7 +4411,7 @@
         sel.innerHTML = eligible.length
           ? eligible.map(function (t) {
               var pi = teamPowerInfo(t);
-              return '<option value="' + t.id + '"' + (t.id === pvpSelTeamId ? " selected" : "") + '>«' + t.name + '» — Poder ' + pi.power + ' · Bracket ' + pi.bracket.name + '</option>';
+              return '<option value="' + t.id + '"' + (t.id === pvpSelTeamId ? " selected" : "") + '>«' + escHtml(t.name) + '» — Poder ' + pi.power + ' · Bracket ' + pi.bracket.name + '</option>';
             }).join("")
           : '<option value="">Sin equipos elegibles</option>';
         sel.disabled = !eligible.length || !!duel;
@@ -4395,29 +4448,37 @@
           canChallenge = false;
         } else if (!eligible.length) {
           guardHtml = '<div class="req-note"><span class="pixel">SIN TEAMS ELEGIBLES</span>Ningún TEAM puede retar ahora mismo:<br />' +
-            teams.map(function (t) { return '· «' + t.name + '» ' + pvpTeamBlocker(t) + '.'; }).join("<br />") + '</div>';
+            teams.map(function (t) { return '· «' + escHtml(t.name) + '» ' + pvpTeamBlocker(t) + '.'; }).join("<br />") + '</div>';
           canChallenge = false;
         } else {
           var blockedList = teams.filter(function (t) { return pvpTeamBlocker(t); });
           if (blockedList.length) {
             guardHtml = '<div class="chance" style="margin-bottom:14px">Estos TEAMs no pueden retar y no aparecen en el selector:<span class="calc">' +
-              blockedList.map(function (t) { return '· «' + t.name + '» ' + pvpTeamBlocker(t) + '.'; }).join("<br />") + '</span></div>';
+              blockedList.map(function (t) { return '· «' + escHtml(t.name) + '» ' + pvpTeamBlocker(t) + '.'; }).join("<br />") + '</span></div>';
           }
           if (state.balance < pvpBetAmount) {
             guardHtml += '<div class="req-note"><span class="pixel">SALDO INSUFICIENTE</span>Tu balance es <b>' + fmt(state.balance) + ' $ARMY</b> y la apuesta elegida es <b>' + fmt(pvpBetAmount) + ' $ARMY</b>: baja el nivel de apuesta o consigue $ARMY de prueba con el faucet del encabezado.</div>';
             canChallenge = false;
           }
         }
-        // Límite diario: con los 10 duelos de hoy completados no se puede
-        // retar más hasta que cambie el día (el modo práctica es ilimitado).
+        // Requisito de los duelos reales: sesión de Google Y wallet
+        // conectada. Sin identidad no hay nube donde dejar el reto ni
+        // guardado propio donde cobrar el premio.
+        if (!pvpAsyncReady()) {
+          guardHtml += '<div class="req-note"><span class="pixel">DUELOS CONTRA JUGADORES REALES</span>Los duelos con apuesta se juegan contra <b>otros jugadores</b> por turnos y necesitan <b>sesión de Google</b> (botón del encabezado) y <b>wallet conectada</b>: sin eso, «Buscar rival» queda deshabilitado. El <b>modo práctica</b> sigue abierto sin requisitos.</div>';
+          canChallenge = false;
+        }
+        // Límite diario: con los 10 duelos de hoy resueltos no se puede
+        // buscar rival más hasta que cambie el día (la práctica es ilimitada).
         if (dailyFull) {
           guardHtml += '<div class="req-note"><span class="pixel">LÍMITE DIARIO</span><b>Límite diario de 10 duelos alcanzado</b>: ya completaste los <b>' + PVP_DAILY_LIMIT + ' duelos con apuesta</b> de hoy. El contador se reinicia al cambiar de día; mientras tanto, el <b>modo práctica</b> sigue ilimitado.</div>';
           canChallenge = false;
         }
         $("pvpGuard").innerHTML = guardHtml;
         var btn = $("pvpChallengeBtn");
-        btn.disabled = !canChallenge || !!duel;
-        btn.textContent = duel ? "Duelo en curso…" : dailyFull ? "Límite diario de 10 duelos alcanzado" : "Retar a un rival — " + fmt(pvpBetAmount) + " $ARMY";
+        btn.disabled = !canChallenge || !!duel || pvpSearching;
+        btn.textContent = duel ? "Duelo en curso…" : pvpSearching ? "Buscando rival…" : dailyFull ? "Límite diario de 10 duelos alcanzado" : "Buscar rival — " + fmt(pvpBetAmount) + " $ARMY";
+        renderMyDuels();
       }
 
       function renderPvpHistory() {
@@ -4433,9 +4494,10 @@
           var tag = h.outcome === "win" ? '<span class="tag ok">VICTORIA</span>'
             : h.outcome === "loss" ? '<span class="tag fail">DERROTA</span>'
             : '<span class="tag tie">EMPATE</span>';
-          var amt = h.net > 0 ? "+" + fmt(h.net) + " $ARMY" : h.net < 0 ? "−" + fmt(-h.net) + " $ARMY" : "0 $ARMY";
-          var amtCls = h.net > 0 ? "plus" : h.net < 0 ? "minus" : "zero";
-          return '<li>' + tag + '<span>vs <b>' + h.rival + '</b> · Bracket ' + h.bracket + ' · TEAM «' + h.teamName + '» · apuesta ' + fmt(h.bet) + ' $ARMY</span><span class="amt ' + amtCls + '">' + amt + '</span></li>';
+          var netN = Number(h.net) || 0;
+          var amt = netN > 0 ? "+" + fmt(netN) + " $ARMY" : netN < 0 ? "−" + fmt(-netN) + " $ARMY" : "0 $ARMY";
+          var amtCls = netN > 0 ? "plus" : netN < 0 ? "minus" : "zero";
+          return '<li>' + tag + '<span>vs <b>' + escHtml(h.rival) + '</b> · Bracket ' + escHtml(h.bracket) + ' · TEAM «' + escHtml(h.teamName) + '» · apuesta ' + fmtNum(h.bet) + ' $ARMY</span><span class="amt ' + amtCls + '">' + amt + '</span></li>';
         }).join("");
       }
 
@@ -4451,111 +4513,586 @@
         if (mode === "bet") renderPvpBet();
       }
 
-      // Retar: descuenta la apuesta del balance al momento y arranca la
-      // partida con el contexto del duelo. Las guardas se revalidan aquí
-      // además de en el render (el botón ya viene deshabilitado si fallan).
-      function pvpChallenge() {
-        if (duel) return;
+      // ---------- Duelos asincrónicos: acceso a la nube (colección «duels») ----------
+      // fbReady / fbDb / fbUser / walletPk viven en las secciones de Firebase
+      // y de wallet; aquí solo se leen (declarados con var, ya inicializados
+      // cuando la interfaz responde).
+      function pvpAsyncReady() { return !!(fbReady && fbDb && fbUser && walletPk); }
+      function pvpDuelsCol() { return fbDb.collection("duels"); }
+      function pvpNoteShow(html) {
+        var n = $("pvpAsyncNote");
+        if (!n) return;
+        n.innerHTML = html ? '<div class="chance">' + html + "</div>" : "";
+      }
+      // Resultado de un reto resuelto desde la perspectiva de un wallet.
+      function pvpOutcomeFor(d, me) {
+        if (d.result === "tie") return "tie";
+        return d.result === me ? "win" : "loss";
+      }
+      function pvpPrizeOf(bet) { var pot = bet * 2; return pot - Math.round(pot * 0.05); }
+      function pvpFeeOf(bet) { return Math.round(bet * 2 * 0.05); }
+
+      // Buscar rival: reclama con transacción el reto en espera más antiguo
+      // del mismo bracket y la misma apuesta. La consulta filtra solo por
+      // estado (índice simple de Firestore) y el bracket, la apuesta y la
+      // antigüedad se filtran en el cliente: en testnet hay pocos retos en
+      // espera y así no hacen falta índices compuestos en la consola.
+      function pvpFindAndClaim(team, pi, bet) {
+        var me = walletPk;
+        return pvpDuelsCol().where("status", "==", "waiting").limit(50).get().then(function (snap) {
+          var cands = [];
+          snap.forEach(function (doc) {
+            var d = doc.data();
+            if (d.bracket === pi.bracket.name && d.bet === bet && d.challengerWallet !== me) {
+              cands.push({ id: doc.id, d: d });
+            }
+          });
+          cands.sort(function (a, b) { return (a.d.createdAtMs || 0) - (b.d.createdAtMs || 0); });
+          var tries = 0;
+          function attempt() {
+            if (tries >= 3 || tries >= cands.length) return Promise.resolve(null);
+            var cand = cands[tries++];
+            return pvpClaimMatchTx(cand, team, pi).then(function (ok) {
+              return ok ? cand : attempt();
+            });
+          }
+          return attempt();
+        });
+      }
+      // Reclamo atómico de un reto: solo prospera si sigue «waiting» y no es
+      // propio; si otro jugador lo reclamó antes, devuelve false y el
+      // buscador reintenta con el siguiente candidato (hasta 3 intentos).
+      function pvpClaimMatchTx(cand, team, pi) {
+        var me = walletPk;
+        var ref = pvpDuelsCol().doc(cand.id);
+        return fbDb.runTransaction(function (tx) {
+          return tx.get(ref).then(function (snap) {
+            if (!snap.exists) return false;
+            var d = snap.data();
+            if (d.status !== "waiting" || d.challengerWallet === me) return false;
+            tx.update(ref, {
+              status: "matched",
+              matcherWallet: me,
+              matcherTeam: { name: team.name, power: pi.power, bracket: pi.bracket.name }
+            });
+            return true;
+          });
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo reclamar el reto " + cand.id + ".", err);
+          return false;
+        });
+      }
+      // Liberar un reto reclamado (cancelación a mitad de partida): vuelve a
+      // «waiting» sin rival asignado. Sin deducciones de ningún tipo.
+      function pvpReleaseMatch(id) {
+        if (!fbReady || !fbDb || !walletPk) return;
+        var me = walletPk;
+        var ref = pvpDuelsCol().doc(id);
+        fbDb.runTransaction(function (tx) {
+          return tx.get(ref).then(function (snap) {
+            if (!snap.exists) return;
+            var d = snap.data();
+            if (d.status === "matched" && d.matcherWallet === me) {
+              tx.update(ref, { status: "waiting", matcherWallet: null, matcherTeam: null });
+            }
+          });
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo liberar el reto " + id + ".", err);
+        });
+        for (var i = 0; i < myDuelsCache.length; i++) {
+          if (myDuelsCache[i].id === id) { myDuelsCache.splice(i, 1); break; }
+        }
+      }
+
+      // Buscar rival: las guardas se revalidan aquí además de en el render
+      // (el botón ya viene deshabilitado si fallan). Si se reclama un reto,
+      // la partida arranca como buscador (duelId fijado); si no hay reto
+      // disponible, arranca como retador y su puntaje se convertirá en reto
+      // en espera al completarla — salvo que ya tenga 3 retos en espera
+      // (anti-spam). La apuesta NO se descuenta aquí: solo al completar.
+      function pvpSearchRival() {
+        if (duel || pvpSearching) return;
+        if (!pvpAsyncReady()) { renderPvpBet(); return; }
         if (pvpDuelsToday() >= PVP_DAILY_LIMIT) { renderPvpBet(); return; }
         var team = teamById(pvpSelTeamId);
         if (!team || pvpTeamBlocker(team)) { renderPvpBet(); return; }
         if (state.balance < pvpBetAmount) { renderPvpBet(); return; }
-        state.balance -= pvpBetAmount;
-        updateStats();
-        var bv = $("balanceVal");
-        bv.classList.remove("bump"); void bv.offsetWidth; bv.classList.add("bump");
-        pvpHasResult = false;
-        $("pvpBetResult").hidden = true;
-        duelStart({ teamId: team.id, amount: pvpBetAmount });
+        var bet = pvpBetAmount;
+        var pi = teamPowerInfo(team);
+        pvpSearching = true;
+        pvpNoteShow("");
         renderPvpBet();
+        pvpFindAndClaim(team, pi, bet).then(function (cand) {
+          if (cand) {
+            pvpSearching = false;
+            pvpHasResult = false;
+            $("pvpBetResult").hidden = true;
+            duelStart({ teamId: team.id, amount: bet, duelId: cand.id, role: "matcher" });
+            renderPvpBet();
+            return null;
+          }
+          // Sin reto disponible: contar los retos propios en espera antes
+          // de permitir crear otro (anti-spam, máximo PVP_MAX_WAITING).
+          return pvpDuelsCol().where("challengerWallet", "==", walletPk).get().then(function (snap) {
+            var waiting = 0;
+            snap.forEach(function (doc) { if (doc.data().status === "waiting") waiting++; });
+            pvpSearching = false;
+            if (waiting >= PVP_MAX_WAITING) {
+              pvpNoteShow("Ya tienes <b>" + PVP_MAX_WAITING + " retos en espera</b>: no puedes crear otro hasta que se resuelvan, venzan o canceles alguno en «Mis retos».");
+              renderPvpBet();
+              return;
+            }
+            pvpHasResult = false;
+            $("pvpBetResult").hidden = true;
+            duelStart({ teamId: team.id, amount: bet, duelId: null, role: "challenger" });
+            renderPvpBet();
+          });
+        }).catch(function (err) {
+          pvpSearching = false;
+          console.warn("[Armary] No se pudo buscar rival en la nube.", err);
+          pvpNoteShow("No se pudo buscar rival en la nube. Revisa tu conexión (y que las reglas de Firestore permitan la colección «duels») e inténtalo de nuevo.");
+          renderPvpBet();
+        });
       }
 
-      // Resolución del duelo con apuesta al terminar la partida: se simula el
-      // rival dentro del bracket del jugador y se aplica todo lo demás —
-      // pozo y fee, munición y conteo para el límite diario. Los duelos NO
-      // provocan bloqueo, NO cuentan como expedición y NO suben niveles:
-      // bloqueo y niveles son solo de las misiones.
-      function resolveBetDuel(d, acc) {
+      // Al terminar la partida de un duelo con apuesta: SOLO AHORA se
+      // descuentan la apuesta y la munición (cancelar a mitad no cuesta
+      // nada). Si la partida era de retador, su puntaje se convierte en un
+      // reto «waiting» en la nube; si era de buscador sobre un reto
+      // reclamado, el reto se resuelve en su documento y el premio propio
+      // se cobra por reclamación (pvpClaimDuel), sin tocar balances ajenos.
+      // Los duelos NO provocan bloqueo, NO cuentan como expedición y NO
+      // suben niveles: bloqueo y niveles son solo de las misiones.
+      function resolveAsyncDuel(d, acc) {
         var team = teamById(d.bet.teamId);
         if (!team) { duelShowIdle(); return; }
+        if (!pvpAsyncReady()) { duelShowIdle(); return; }
         var bet = d.bet.amount;
-        var br = teamPowerInfo(team).bracket;
-        var rival = {
-          name: PVP_RIVAL_NAMES[Math.floor(Math.random() * PVP_RIVAL_NAMES.length)],
-          power: pvpRandInt(br.powMin, br.powMax),
-          score: pvpRandInt(br.scoreMin, br.scoreMax),
-          acc: pvpRandInt(70, 95)
-        };
-        // Gana el puntaje más alto; empate de puntaje → mejor precisión;
-        // empate total → apuesta devuelta a ambos, sin fee.
-        var outcome, tiebreak = false;
-        if (d.score > rival.score) outcome = "win";
-        else if (d.score < rival.score) outcome = "loss";
-        else if (acc > rival.acc) { outcome = "win"; tiebreak = true; }
-        else if (acc < rival.acc) { outcome = "loss"; tiebreak = true; }
-        else outcome = "tie";
-        var pot = bet * 2;
-        var fee = Math.round(pot * 0.05);
-        var prize = pot - fee;
-        var net = 0;
-        if (outcome === "win") { state.balance += prize; state.earned += prize; net = prize - bet; }
-        else if (outcome === "tie") { state.balance += bet; net = 0; }
-        else { net = -bet; }
-        // Munición consumida gane o pierda (también en empate: el duelo cuenta
-        // como jugado). El duelo completado suma 1 al contador diario (máx.
-        // 10 por día). Sin bloqueo del TEAM, sin expedición ni nivel, y sin
-        // desgaste de XP ni daño de transporte: la apuesta ya es el riesgo.
+        var pi = teamPowerInfo(team);
         var aCost = teamAmmoCost(team);
+        state.balance -= bet;
         team.ammo = teamAmmo(team) - aCost;
-        pvpDaily.count = pvpDuelsToday() + 1;
-        var duelsTodayNow = pvpDaily.count;
-        pvpHistory.unshift({ rival: rival.name, bracket: br.name, outcome: outcome, bet: bet, net: net, teamName: team.name });
-
-        // Overlay resumen sobre el área de tiro
-        $("duelBetHeadline").textContent = outcome === "win" ? "¡VICTORIA!" : outcome === "loss" ? "DERROTA" : "EMPATE";
-        $("duelBetVersus").innerHTML = 'Contra <b>«' + rival.name + '»</b> · Bracket ' + br.name + ' · Poder ' + rival.power + ' · su precisión: ' + rival.acc + '%' +
-          (tiebreak ? '<br />Empate de puntaje: lo decidió la precisión (tú ' + acc + '% vs ' + rival.acc + '%).' : '') +
-          (outcome === "tie" ? '<br />Empate total: mismo puntaje y misma precisión — apuesta devuelta, sin fee.' : '');
+        updateStats();
+        $("duelBetHeadline").textContent = "REGISTRANDO…";
+        $("duelBetVersus").textContent = "Guardando tu partida en la nube…";
         $("duelBetMyScore").textContent = fmt(d.score);
-        $("duelBetRivalScore").textContent = fmt(rival.score);
-        $("duelBetNet").textContent = (net > 0 ? "+" : net < 0 ? "−" : "") + fmt(Math.abs(net)) + " $ARMY";
-        $("duelBetDetailLine").textContent = outcome === "win"
-          ? "Cobras el 95% del pozo de " + fmt(pot) + " $ARMY: +" + fmt(prize) + " $ARMY (fee del 5% al pool: " + fmt(fee) + " $ARMY). El detalle completo está debajo del área de tiro."
-          : outcome === "tie"
-            ? "Tu apuesta de " + fmt(bet) + " $ARMY volvió a tu balance. El detalle completo está debajo del área de tiro."
-            : "El rival cobra el premio de " + fmt(prize) + " $ARMY del pozo de " + fmt(pot) + " $ARMY. El detalle completo está debajo del área de tiro.";
+        $("duelBetRivalScore").textContent = "—";
+        $("duelBetNet").textContent = "—";
+        $("duelBetDetailLine").textContent = "";
         $("duelBetResults").hidden = false;
+        if (d.bet.duelId) pvpResolveClaimed(d, acc, team, pi, aCost);
+        else pvpCreateWaiting(d, acc, team, pi, aCost);
+      }
 
-        // Panel de resultado completo, con el contador diario actualizado
-        // (los duelos ya no provocan bloqueo: no hay animación de regreso)
-        var payoutTxt = outcome === "win"
-          ? ' Pozo: <b>' + fmt(pot) + ' $ARMY</b> (tu apuesta + la del rival) · Fee al pool de recompensas (5%): <b>' + fmt(fee) + ' $ARMY</b> · Premio cobrado (95%): <b>+' + fmt(prize) + ' $ARMY</b>. Cambio neto de tu balance: <b>+' + fmt(net) + ' $ARMY</b> (balance: ' + fmt(state.balance) + ' $ARMY).'
-          : outcome === "tie"
-            ? ' Empate total — mismo puntaje y misma precisión —: la apuesta se devuelve a ambos, <b>sin fee</b>. Tu apuesta de <b>' + fmt(bet) + ' $ARMY</b> volvió a tu balance (balance: ' + fmt(state.balance) + ' $ARMY) y el duelo cuenta como jugado.'
-            : ' Pozo: <b>' + fmt(pot) + ' $ARMY</b> · El rival cobra el premio del 95%: <b>' + fmt(prize) + ' $ARMY</b> (fee del 5% al pool: ' + fmt(fee) + ' $ARMY). Pierdes tu apuesta: cambio neto <b>−' + fmt(bet) + ' $ARMY</b> (balance: ' + fmt(state.balance) + ' $ARMY).';
-        var resultHtml =
-          '<div class="result show ' + (outcome === "loss" ? "fail" : "ok") + '">' +
-            '<span class="pixel">' + (outcome === "win" ? "¡VICTORIA EN EL DUELO!" : outcome === "loss" ? "DERROTA EN EL DUELO" : "EMPATE TOTAL") + '</span>' +
-            'Tu puntaje: <b>' + fmt(d.score) + '</b> (precisión <b>' + acc + '%</b>) · Rival <b>«' + rival.name + '»</b> (Bracket ' + br.name + ' · Poder ' + rival.power + '): <b>' + fmt(rival.score) + '</b> (precisión <b>' + rival.acc + '%</b>).' +
-            (tiebreak ? ' Empate de puntaje: lo decidió la <b>precisión</b> — tú ' + acc + '% contra ' + rival.acc + '% del rival.' : '') +
-            payoutTxt +
-            ' Se consumieron <b>' + aCost + ' municiones</b> del almacén de «' + team.name + '» (quedan ' + fmt(team.ammo) + '), gane o pierda, igual que en las misiones. <b>Sin desgaste de XP ni daño de transporte</b>: en los duelos por habilidad la apuesta ya es el riesgo.' +
-            ' «' + team.name + '» queda <b>libre de inmediato</b>: los duelos no provocan bloqueo ni cuentan como expedición.' +
-          '</div>' +
-          '<div class="chance">Duelos hoy: <b>' + duelsTodayNow + '/' + PVP_DAILY_LIMIT + '</b><span class="calc">' + (duelsTodayNow >= PVP_DAILY_LIMIT
-            ? 'Límite diario de 10 duelos alcanzado: mañana podrás retar de nuevo. El modo práctica sigue ilimitado.'
-            : 'Te quedan ' + (PVP_DAILY_LIMIT - duelsTodayNow) + ' duelos con apuesta hoy. El límite se reinicia al cambiar de día; el modo práctica no cuenta.') + '</span></div>';
-        var panel = $("pvpBetResult");
-        panel.innerHTML = resultHtml;
-        panel.hidden = false;
-        pvpHasResult = true;
+      // Camino del retador: crea el reto en espera con su puntaje y su
+      // precisión. Si la nube falla, no hay duelo: apuesta y munición se
+      // devuelven íntegras.
+      function pvpCreateWaiting(d, acc, team, pi, aCost) {
+        var bet = d.bet.amount;
+        var doc = {
+          challengerWallet: walletPk,
+          challengerTeam: { name: team.name, power: pi.power, bracket: pi.bracket.name },
+          bracket: pi.bracket.name,
+          bet: bet,
+          challengerScore: d.score,
+          challengerAccuracy: acc,
+          status: "waiting",
+          createdAtMs: Date.now(),
+          matcherWallet: null,
+          matcherTeam: null,
+          matcherScore: null,
+          matcherAccuracy: null,
+          result: null,
+          appliedChallenger: false,
+          appliedMatcher: false
+        };
+        pvpDuelsCol().add(doc).then(function (ref) {
+          myDuelsCache.unshift({ id: ref.id, d: doc });
+          $("duelBetHeadline").textContent = "RETO EN ESPERA";
+          $("duelBetVersus").innerHTML = "Tu puntaje quedó como reto en el <b>Bracket " + pi.bracket.name + "</b> con apuesta de <b>" + fmt(bet) + " $ARMY</b>. El primer jugador de tu bracket y apuesta que busque rival se emparejará contigo y jugará su partida contra tu puntaje.";
+          $("duelBetDetailLine").textContent = "Si nadie acepta el reto en 24 h, vence y tu apuesta vuelve íntegra. Puedes cancelarlo cuando quieras en «Mis retos», aquí abajo.";
+          var panel = $("pvpBetResult");
+          panel.innerHTML =
+            '<div class="result show ok"><span class="pixel">RETO CREADO — EN ESPERA DE RIVAL</span>' +
+            "Tu puntaje: <b>" + fmt(d.score) + "</b> (precisión <b>" + acc + "%</b>) · Bracket <b>" + pi.bracket.name + "</b> · Apuesta descontada: <b>" + fmt(bet) + " $ARMY</b> (balance: " + fmt(state.balance) + " $ARMY)." +
+            " Se consumieron <b>" + aCost + " municiones</b> del almacén de «" + escHtml(team.name) + "» (quedan " + fmt(team.ammo) + "), gane o pierda, igual que en las misiones. <b>Sin desgaste de XP ni daño de transporte</b>." +
+            " «" + escHtml(team.name) + "» queda <b>libre de inmediato</b>: los duelos no provocan bloqueo ni cuentan como expedición." +
+            " El duelo contará para tu límite diario cuando se <b>resuelva</b>; si vence a las 24 h sin rival, la apuesta vuelve íntegra y no cuenta." +
+            "</div>";
+          panel.hidden = false;
+          pvpHasResult = true;
+          refreshAll();
+          renderMyDuels();
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo crear el reto en la nube.", err);
+          state.balance += bet;
+          team.ammo = teamAmmo(team) + aCost;
+          updateStats();
+          $("duelBetHeadline").textContent = "SIN CONEXIÓN";
+          $("duelBetVersus").textContent = "No se pudo guardar tu reto en la nube: la apuesta y la munición se te devolvieron íntegras. Revisa tu conexión (y las reglas de Firestore para la colección «duels») e inténtalo de nuevo.";
+          $("duelBetDetailLine").textContent = "";
+          refreshAll();
+        });
+      }
 
-        if (outcome !== "loss") {
-          var bv2 = $("balanceVal");
-          bv2.classList.remove("bump"); void bv2.offsetWidth; bv2.classList.add("bump");
-        }
-        refreshAll();
-        renderPvpHistory();
+      // Camino del buscador: resuelve el reto reclamado en su documento.
+      // Gana el mayor puntaje; empate de puntaje → mayor precisión; empate
+      // total → «tie». El cliente que resuelve NO toca los balances: el
+      // premio propio se cobra acto seguido por reclamación y el del
+      // retador lo cobrará él en su propio guardado cuando entre a PvP.
+      function pvpResolveClaimed(d, acc, team, pi, aCost) {
+        var bet = d.bet.amount;
+        var id = d.bet.duelId;
+        var ref = pvpDuelsCol().doc(id);
+        ref.get().then(function (snap) {
+          if (!snap.exists) throw new Error("El reto ya no existe");
+          var cd = snap.data();
+          if (cd.status !== "matched" || cd.matcherWallet !== walletPk) throw new Error("El reto ya no está asignado a ti");
+          // Los datos del reto los escribió OTRO jugador: se fuerzan a
+          // número antes de comparar o mostrar (nunca se confía en su tipo).
+          var rScore = Number(cd.challengerScore) || 0;
+          var rAcc = Number(cd.challengerAccuracy) || 0;
+          var outcome, tiebreak = false;
+          if (d.score > rScore) outcome = "win";
+          else if (d.score < rScore) outcome = "loss";
+          else if (acc > rAcc) { outcome = "win"; tiebreak = true; }
+          else if (acc < rAcc) { outcome = "loss"; tiebreak = true; }
+          else outcome = "tie";
+          var result = outcome === "tie" ? "tie" : outcome === "win" ? walletPk : cd.challengerWallet;
+          return ref.update({
+            matcherScore: d.score,
+            matcherAccuracy: acc,
+            status: "resolved",
+            result: result
+          }).then(function () {
+            var found = false;
+            for (var i = 0; i < myDuelsCache.length; i++) {
+              if (myDuelsCache[i].id === id) {
+                found = true;
+                myDuelsCache[i].d.status = "resolved";
+                myDuelsCache[i].d.result = result;
+                myDuelsCache[i].d.matcherScore = d.score;
+                myDuelsCache[i].d.matcherAccuracy = acc;
+              }
+            }
+            if (!found) {
+              cd.status = "resolved"; cd.result = result;
+              cd.matcherScore = d.score; cd.matcherAccuracy = acc;
+              cd.matcherWallet = walletPk;
+              cd.matcherTeam = { name: team.name, power: pi.power, bracket: pi.bracket.name };
+              myDuelsCache.unshift({ id: id, d: cd });
+            }
+            return { cd: cd, outcome: outcome, tiebreak: tiebreak, rScore: rScore, rAcc: rAcc };
+          });
+        }).then(function (r) {
+          // Cobro propio por reclamación (acredita el premio y suma el
+          // duelo al contador diario de resueltos).
+          return pvpClaimDuel(id).then(function () { return r; });
+        }).then(function (r) {
+          var cd = r.cd, outcome = r.outcome;
+          var pot = bet * 2, fee = pvpFeeOf(bet), prize = pvpPrizeOf(bet);
+          var net = outcome === "win" ? prize - bet : outcome === "tie" ? 0 : -bet;
+          var rivalName = cd.challengerTeam && cd.challengerTeam.name ? cd.challengerTeam.name : pvpWalletTxt(cd.challengerWallet);
+          $("duelBetHeadline").textContent = outcome === "win" ? "¡VICTORIA!" : outcome === "loss" ? "DERROTA" : "EMPATE";
+          $("duelBetVersus").innerHTML = "Contra <b>«" + escHtml(rivalName) + "»</b> (" + escHtml(pvpWalletTxt(cd.challengerWallet)) + ") · Bracket " + escHtml(cd.bracket) + " · su precisión: " + r.rAcc + "%" +
+            (r.tiebreak ? "<br />Empate de puntaje: lo decidió la precisión (tú " + acc + "% vs " + r.rAcc + "%)." : "") +
+            (outcome === "tie" ? "<br />Empate total: mismo puntaje y misma precisión — apuesta devuelta a ambos, sin fee." : "");
+          $("duelBetRivalScore").textContent = fmtNum(cd.challengerScore);
+          $("duelBetNet").textContent = (net > 0 ? "+" : net < 0 ? "−" : "") + fmt(Math.abs(net)) + " $ARMY";
+          $("duelBetDetailLine").textContent = outcome === "win"
+            ? "Premio del 95% del pozo acreditado en tu balance: +" + fmt(prize) + " $ARMY (fee del 5% al pool: " + fmt(fee) + " $ARMY)."
+            : outcome === "tie"
+              ? "Tu apuesta de " + fmt(bet) + " $ARMY volvió a tu balance."
+              : "El rival cobrará su premio de " + fmt(prize) + " $ARMY en su propio guardado cuando entre a la vista PvP.";
+          var payoutTxt = outcome === "win"
+            ? " Pozo: <b>" + fmt(pot) + " $ARMY</b> (tu apuesta + la del rival) · Fee al pool de recompensas (5%): <b>" + fmt(fee) + " $ARMY</b> · Premio cobrado (95%): <b>+" + fmt(prize) + " $ARMY</b>. Cambio neto de tu balance: <b>+" + fmt(net) + " $ARMY</b> (balance: " + fmt(state.balance) + " $ARMY)."
+            : outcome === "tie"
+              ? " Empate total — mismo puntaje y misma precisión —: la apuesta se devuelve a ambos, <b>sin fee</b>. Tu apuesta de <b>" + fmt(bet) + " $ARMY</b> volvió a tu balance (balance: " + fmt(state.balance) + " $ARMY) y el duelo cuenta como resuelto."
+              : " Pozo: <b>" + fmt(pot) + " $ARMY</b> · El rival cobra el premio del 95%: <b>" + fmt(prize) + " $ARMY</b> (fee del 5% al pool: " + fmt(fee) + " $ARMY) en su propio guardado, al entrar a la vista PvP. Pierdes tu apuesta: cambio neto <b>−" + fmt(bet) + " $ARMY</b> (balance: " + fmt(state.balance) + " $ARMY).";
+          var duelsTodayNow = pvpDuelsToday();
+          var panel = $("pvpBetResult");
+          panel.innerHTML =
+            '<div class="result show ' + (outcome === "loss" ? "fail" : "ok") + '">' +
+              '<span class="pixel">' + (outcome === "win" ? "¡VICTORIA EN EL DUELO!" : outcome === "loss" ? "DERROTA EN EL DUELO" : "EMPATE TOTAL") + "</span>" +
+              "Tu puntaje: <b>" + fmt(d.score) + "</b> (precisión <b>" + acc + "%</b>) · Rival <b>«" + escHtml(rivalName) + "»</b> (" + escHtml(pvpWalletTxt(cd.challengerWallet)) + ", Bracket " + escHtml(cd.bracket) + "): <b>" + fmt(r.rScore) + "</b> (precisión <b>" + r.rAcc + "%</b>)." +
+              (r.tiebreak ? " Empate de puntaje: lo decidió la <b>precisión</b> — tú " + acc + "% contra " + r.rAcc + "% del rival." : "") +
+              payoutTxt +
+              " Se consumieron <b>" + aCost + " municiones</b> del almacén de «" + escHtml(team.name) + "» (quedan " + fmt(team.ammo) + "), gane o pierda, igual que en las misiones. <b>Sin desgaste de XP ni daño de transporte</b>: en los duelos por habilidad la apuesta ya es el riesgo." +
+              " «" + escHtml(team.name) + "» queda <b>libre de inmediato</b>: los duelos no provocan bloqueo ni cuentan como expedición." +
+            "</div>" +
+            '<div class="chance">Duelos hoy: <b>' + duelsTodayNow + "/" + PVP_DAILY_LIMIT + '</b><span class="calc">' + (duelsTodayNow >= PVP_DAILY_LIMIT
+              ? "Límite diario de 10 duelos alcanzado: mañana podrás buscar rival de nuevo. El modo práctica sigue ilimitado."
+              : "Te quedan " + (PVP_DAILY_LIMIT - duelsTodayNow) + " duelos con apuesta hoy. El límite se reinicia al cambiar de día; el modo práctica no cuenta.") + "</span></div>";
+          panel.hidden = false;
+          pvpHasResult = true;
+          if (outcome !== "loss") {
+            var bv = $("balanceVal");
+            bv.classList.remove("bump"); void bv.offsetWidth; bv.classList.add("bump");
+          }
+          refreshAll();
+          renderPvpHistory();
+          renderMyDuels();
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo resolver el reto reclamado.", err);
+          // Si el reto sigue «matched» a mi nombre, se libera y se devuelven
+          // la apuesta y la munición; si ya quedó resuelto, el cobro del
+          // premio se reintentará en la próxima sincronización.
+          ref.get().then(function (snap) {
+            var cd = snap.exists ? snap.data() : null;
+            if (cd && cd.status === "matched" && cd.matcherWallet === walletPk) {
+              pvpReleaseMatch(id);
+              state.balance += bet;
+              team.ammo = teamAmmo(team) + aCost;
+              updateStats();
+              $("duelBetHeadline").textContent = "SIN CONEXIÓN";
+              $("duelBetVersus").textContent = "No se pudo resolver el duelo: el reto se liberó y tu apuesta y munición se devolvieron íntegras. Inténtalo de nuevo.";
+            } else {
+              $("duelBetHeadline").textContent = "DUELO RESUELTO";
+              $("duelBetVersus").textContent = "El duelo quedó resuelto en la nube; si el premio no se acreditó aún, se cobrará automáticamente la próxima vez que entres a la vista PvP.";
+              pvpDuelsSync();
+            }
+            $("duelBetDetailLine").textContent = "";
+            refreshAll();
+          }).catch(function () { refreshAll(); });
+        });
+      }
+
+      // Cobro por reclamación: marca MI bandera applied* con transacción y,
+      // solo si la transacción la giró de false a true, acredita mi parte en
+      // mi propio balance (ganador: 95% del pozo; empate: la apuesta de
+      // vuelta; derrota: nada), registra el duelo en el historial con el
+      // rival como dirección truncada y lo suma al contador diario de
+      // resueltos. Así nadie escribe en el guardado de otro jugador y nadie
+      // cobra dos veces.
+      function pvpClaimDuel(id) {
+        var me = walletPk;
+        var ref = pvpDuelsCol().doc(id);
+        return fbDb.runTransaction(function (tx) {
+          return tx.get(ref).then(function (snap) {
+            if (!snap.exists) return null;
+            var d = snap.data();
+            if (d.status !== "resolved") return null;
+            var role = d.challengerWallet === me ? "challenger" : d.matcherWallet === me ? "matcher" : null;
+            if (!role) return null;
+            var flag = role === "challenger" ? "appliedChallenger" : "appliedMatcher";
+            if (d[flag]) return null;
+            var upd = {};
+            upd[flag] = true;
+            tx.update(ref, upd);
+            return { d: d, role: role };
+          });
+        }).then(function (res) {
+          if (!res) return null;
+          var d = res.d;
+          var bet = Number(d.bet) || 0;
+          if (!(bet > 0)) return null;
+          var outcome = pvpOutcomeFor(d, me);
+          var net = 0;
+          if (outcome === "win") { var prize = pvpPrizeOf(bet); state.balance += prize; state.earned += prize; net = prize - bet; }
+          else if (outcome === "tie") { state.balance += bet; net = 0; }
+          else net = -bet;
+          pvpDaily.count = pvpDuelsToday() + 1;
+          var rivalWallet = res.role === "challenger" ? d.matcherWallet : d.challengerWallet;
+          var myTeam = res.role === "challenger" ? d.challengerTeam : d.matcherTeam;
+          pvpHistory.unshift({
+            rival: rivalWallet ? walletShort(rivalWallet) : "Rival",
+            bracket: d.bracket,
+            outcome: outcome,
+            bet: bet,
+            net: net,
+            teamName: myTeam && myTeam.name ? myTeam.name : "TEAM"
+          });
+          for (var i = 0; i < myDuelsCache.length; i++) {
+            if (myDuelsCache[i].id === id) {
+              if (res.role === "challenger") myDuelsCache[i].d.appliedChallenger = true;
+              else myDuelsCache[i].d.appliedMatcher = true;
+            }
+          }
+          updateStats();
+          renderPvpHistory();
+          saveGameSoon();
+          return { outcome: outcome, net: net };
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo cobrar el duelo " + id + "; se reintentará en la próxima sincronización.", err);
+          return null;
+        });
+      }
+
+      // Vencimiento de un reto propio en espera (>24 h): pasa a «expired»
+      // con la misma protección de transacción y la apuesta vuelve íntegra
+      // (appliedChallenger actúa como bandera de «lado del retador saldado»).
+      function pvpExpireDuel(id) {
+        var me = walletPk;
+        var ref = pvpDuelsCol().doc(id);
+        return fbDb.runTransaction(function (tx) {
+          return tx.get(ref).then(function (snap) {
+            if (!snap.exists) return null;
+            var d = snap.data();
+            if (d.status !== "waiting" || d.challengerWallet !== me || d.appliedChallenger) return null;
+            if (Date.now() - (d.createdAtMs || 0) <= PVP_DUEL_TTL_MS) return null;
+            tx.update(ref, { status: "expired", appliedChallenger: true });
+            var eb = Number(d.bet);
+            return isFinite(eb) && eb > 0 ? eb : null;
+          });
+        }).then(function (bet) {
+          if (!bet) return null;
+          state.balance += bet;
+          updateStats();
+          for (var i = 0; i < myDuelsCache.length; i++) {
+            if (myDuelsCache[i].id === id) {
+              myDuelsCache[i].d.status = "expired";
+              myDuelsCache[i].d.appliedChallenger = true;
+            }
+          }
+          saveGameSoon();
+          return bet;
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo vencer el reto " + id + ".", err);
+          return null;
+        });
+      }
+
+      // Cancelar un reto propio en espera: solo si sigue «waiting»
+      // (transacción). La apuesta vuelve al balance y el reto queda
+      // «cancelled», fuera del emparejamiento.
+      function pvpCancelDuel(id, btn) {
+        if (!pvpAsyncReady()) return;
+        if (btn) btn.disabled = true;
+        var me = walletPk;
+        var ref = pvpDuelsCol().doc(id);
+        fbDb.runTransaction(function (tx) {
+          return tx.get(ref).then(function (snap) {
+            if (!snap.exists) return null;
+            var d = snap.data();
+            if (d.status !== "waiting" || d.challengerWallet !== me) return null;
+            tx.update(ref, { status: "cancelled", appliedChallenger: true });
+            var cb = Number(d.bet);
+            return isFinite(cb) && cb > 0 ? cb : null;
+          });
+        }).then(function (bet) {
+          if (bet) {
+            state.balance += bet;
+            updateStats();
+            for (var i = 0; i < myDuelsCache.length; i++) {
+              if (myDuelsCache[i].id === id) {
+                myDuelsCache[i].d.status = "cancelled";
+                myDuelsCache[i].d.appliedChallenger = true;
+              }
+            }
+            pvpNoteShow("Reto cancelado: tu apuesta de <b>" + fmt(bet) + " $ARMY</b> volvió a tu balance.");
+            saveGameSoon();
+          } else {
+            pvpNoteShow("Ese reto ya no estaba en espera: pudo ser reclamado por otro jugador o vencer justo ahora.");
+            pvpDuelsSync();
+          }
+          renderMyDuels();
+          renderPvpBet();
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo cancelar el reto " + id + ".", err);
+          if (btn) btn.disabled = false;
+          pvpNoteShow("No se pudo cancelar el reto; inténtalo de nuevo.");
+        });
+      }
+
+      // Revisión de mis duelos en la nube: se ejecuta al entrar a la vista
+      // PvP, al conectar la wallet y al iniciar sesión con Google. Cobra los
+      // retos resueltos con mi bandera sin aplicar y vence (con devolución)
+      // mis retos en espera de más de 24 h. Refresca «Mis retos».
+      function pvpDuelsSync() {
+        renderMyDuels();
+        if (!pvpAsyncReady() || duelSyncInFlight) return;
+        duelSyncInFlight = true;
+        var me = walletPk;
+        var col = pvpDuelsCol();
+        Promise.all([
+          col.where("challengerWallet", "==", me).get(),
+          col.where("matcherWallet", "==", me).get()
+        ]).then(function (snaps) {
+          var map = {};
+          snaps.forEach(function (s) {
+            s.forEach(function (doc) { map[doc.id] = doc.data(); });
+          });
+          myDuelsCache = Object.keys(map).map(function (id) { return { id: id, d: map[id] }; });
+          var now = Date.now();
+          var jobs = [];
+          var notes = [];
+          myDuelsCache.slice().forEach(function (e) {
+            var d = e.d;
+            if (d.challengerWallet === me && d.status === "waiting" && now - (d.createdAtMs || 0) > PVP_DUEL_TTL_MS) {
+              jobs.push(pvpExpireDuel(e.id).then(function (bet) {
+                if (bet) notes.push("Un reto tuyo venció tras 24 h sin rival: apuesta de <b>" + fmt(bet) + " $ARMY</b> devuelta a tu balance.");
+              }));
+            } else if (d.status === "resolved") {
+              var applied = d.challengerWallet === me ? d.appliedChallenger : d.appliedMatcher;
+              if (!applied) {
+                jobs.push(pvpClaimDuel(e.id).then(function (r) {
+                  if (!r) return;
+                  var rivalW = d.challengerWallet === me ? d.matcherWallet : d.challengerWallet;
+                  var rivalTxt = escHtml(pvpWalletTxt(rivalW));
+                  if (r.outcome === "win") notes.push("¡Victoria en un duelo contra <b>" + rivalTxt + "</b>! Premio acreditado: <b>+" + fmtNum(pvpPrizeOf(Number(d.bet) || 0)) + " $ARMY</b>.");
+                  else if (r.outcome === "tie") notes.push("Duelo contra <b>" + rivalTxt + "</b> empatado: tu apuesta de <b>" + fmtNum(d.bet) + " $ARMY</b> volvió a tu balance.");
+                  else notes.push("Duelo contra <b>" + rivalTxt + "</b> resuelto: derrota. El resultado quedó en tu historial.");
+                }));
+              }
+            }
+          });
+          return Promise.all(jobs).then(function () { return notes; });
+        }).then(function (notes) {
+          duelSyncInFlight = false;
+          if (notes && notes.length) pvpNoteShow(notes.join("<br />"));
+          renderMyDuels();
+          renderPvpBet();
+          renderPvpHistory();
+        }).catch(function (err) {
+          duelSyncInFlight = false;
+          console.warn("[Armary] No se pudieron revisar tus duelos en la nube.", err);
+          renderMyDuels();
+        });
+      }
+
+      // «Mis retos»: mis retos en espera (bracket, apuesta, mi puntaje y
+      // tiempo restante de 24 h, con botón de cancelar) y los resueltos
+      // recientes (resultado y premio).
+      function renderMyDuels() {
+        var wrap = $("pvpMyDuels");
+        if (!wrap) return;
+        if (!pvpAsyncReady()) { wrap.hidden = true; return; }
+        var me = walletPk;
+        var now = Date.now();
+        var waiting = [], recent = [];
+        myDuelsCache.forEach(function (e) {
+          var d = e.d;
+          if (d.status === "waiting" && d.challengerWallet === me) waiting.push(e);
+          else if (d.status === "resolved" || d.status === "expired") recent.push(e);
+        });
+        waiting.sort(function (a, b) { return (a.d.createdAtMs || 0) - (b.d.createdAtMs || 0); });
+        recent.sort(function (a, b) { return (b.d.createdAtMs || 0) - (a.d.createdAtMs || 0); });
+        recent = recent.slice(0, 5);
+        if (!waiting.length && !recent.length) { wrap.hidden = true; return; }
+        wrap.hidden = false;
+        var html = "";
+        waiting.forEach(function (e) {
+          var d = e.d;
+          var until = (Number(d.createdAtMs) || now) + PVP_DUEL_TTL_MS;
+          html += '<li><span class="tag wait">EN ESPERA</span><span>Bracket <b>' + escHtml(d.bracket) + "</b> · apuesta <b>" + fmtNum(d.bet) + " $ARMY</b> · tu puntaje <b>" + fmtNum(d.challengerScore) + '</b> · vence en <b><span class="js-duel-left" data-until="' + until + '">' + fmtCountdown(until - now) + "</span></b></span>" +
+            '<button type="button" class="btn pvp-cancel" data-cancel-duel="' + e.id + '">Cancelar reto</button></li>';
+        });
+        recent.forEach(function (e) {
+          var d = e.d;
+          if (d.status === "expired") {
+            html += '<li><span class="tag tie">VENCIDO</span><span>Bracket <b>' + escHtml(d.bracket) + "</b> · apuesta <b>" + fmtNum(d.bet) + " $ARMY</b> · sin rival en 24 h: apuesta devuelta</span></li>";
+            return;
+          }
+          var outcome = pvpOutcomeFor(d, me);
+          var tag = outcome === "win" ? '<span class="tag ok">VICTORIA</span>' : outcome === "loss" ? '<span class="tag fail">DERROTA</span>' : '<span class="tag tie">EMPATE</span>';
+          var applied = d.challengerWallet === me ? d.appliedChallenger : d.appliedMatcher;
+          var prizeTxt = outcome === "win" ? "premio <b>+" + fmtNum(pvpPrizeOf(Number(d.bet) || 0)) + " $ARMY</b>"
+            : outcome === "tie" ? "apuesta devuelta: <b>" + fmtNum(d.bet) + " $ARMY</b>"
+            : "sin premio";
+          var rivalW = d.challengerWallet === me ? d.matcherWallet : d.challengerWallet;
+          html += "<li>" + tag + "<span>vs <b>" + escHtml(pvpWalletTxt(rivalW)) + "</b> · Bracket <b>" + escHtml(d.bracket) + "</b> · apuesta <b>" + fmtNum(d.bet) + " $ARMY</b> · " + prizeTxt + (applied ? " · cobrado" : " · <b>pendiente de cobro</b>") + "</span></li>";
+        });
+        $("pvpMyDuelsList").innerHTML = html;
       }
 
       $("pvpTabPractice").addEventListener("click", function () { setPvpMode("practice"); });
@@ -4570,7 +5107,12 @@
           renderPvpBet();
         });
       });
-      $("pvpChallengeBtn").addEventListener("click", pvpChallenge);
+      $("pvpChallengeBtn").addEventListener("click", pvpSearchRival);
+      $("pvpMyDuelsList").addEventListener("click", function (ev) {
+        var t = ev.target;
+        var btn = t && t.closest ? t.closest("[data-cancel-duel]") : null;
+        if (btn) pvpCancelDuel(btn.getAttribute("data-cancel-duel"), btn);
+      });
 
       // ---------- Firebase: sesión con Google y guardado en la nube por wallet ----------
       // La wallet ES el usuario; Google es solo la puerta de acceso que las
@@ -4806,6 +5348,9 @@
           googleUiShow();
           cloudRefreshStatus();
           if (fbUser && walletPk) cloudLoadForWallet(walletPk);
+          // Al iniciar sesión con Google (con wallet conectada) también se
+          // revisan los duelos asincrónicos propios por cobrar o vencidos.
+          if (fbUser && walletPk && typeof pvpDuelsSync === "function") pvpDuelsSync();
         });
       }
       $("googleSignInBtn").addEventListener("click", function () {
@@ -5083,6 +5628,9 @@
           el.style.width = pct + "%";
         });
         Array.prototype.forEach.call(document.querySelectorAll(".js-lock-left"), function (el) {
+          el.textContent = fmtCountdown(parseInt(el.getAttribute("data-until"), 10) - now);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll(".js-duel-left"), function (el) {
           el.textContent = fmtCountdown(parseInt(el.getAttribute("data-until"), 10) - now);
         });
         var repairsDone = settleRepairs();
