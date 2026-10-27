@@ -171,7 +171,17 @@
         color: var(--hero-muted); white-space: nowrap;
       }
       .active-user b { font-family: "Press Start 2P", monospace; font-size: 0.68rem; font-weight: 400; color: var(--gold); }
-      @media (max-width: 640px) { .wallet-zone { align-items: flex-start; } }
+      /* ---------- Firebase: sesión Google y estado de la nube ---------- */
+      .cloud-status {
+        font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+        color: var(--hero-muted); white-space: normal; text-align: right; max-width: 430px;
+      }
+      .google-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+      .google-email {
+        font-family: "Press Start 2P", monospace; font-size: 0.62rem; color: var(--gold);
+        max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      @media (max-width: 640px) { .wallet-zone { align-items: flex-start; } .google-row { justify-content: flex-start; } .cloud-status { text-align: left; } }
 
       .btn {
         font-family: "Chakra Petch", sans-serif;
@@ -1232,6 +1242,12 @@
           <button class="btn small danger" id="resetProgressBtn" type="button" title="Borra el progreso guardado en este navegador y reinicia la demo desde cero (500.000 $ARMY)">Borrar progreso</button>
           <div class="wallet-zone">
             <span class="active-user" id="activeUserTag">USUARIO ACTIVO: <b>Invitado</b></span>
+            <span class="cloud-status" id="cloudStatus" role="status">Nube: solo local (inicia sesión con Google para sincronizar)</span>
+            <div class="google-row">
+              <button class="btn small ghost" id="googleSignInBtn" type="button" title="Inicia sesión con Google para sincronizar tu progreso en la nube">Iniciar sesión con Google</button>
+              <span class="google-email" id="googleEmail" hidden></span>
+              <button class="btn small ghost" id="googleSignOutBtn" type="button" hidden>Cerrar sesión</button>
+            </div>
             <button class="btn wallet" id="walletBtn" type="button" title="Conecta tu wallet Phantom en devnet (solo lectura: no se firma ninguna transacción)">Conectar wallet</button>
             <div class="wallet-panel" id="walletPanel" hidden>
               <span class="wallet-tag">WALLET DEVNET · SIN VALOR REAL</span>
@@ -1244,6 +1260,7 @@
               </span>
             </div>
             <p class="wallet-note" id="walletNote" role="status" hidden></p>
+            <p class="wallet-note" id="googleNote" role="status" hidden></p>
           </div>
         </div>
       </div>
@@ -1642,6 +1659,11 @@
 
     <!-- Librería de Solana (bundle IIFE): se usa SOLO para leer los saldos devnet de la wallet conectada -->
     <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js@1/lib/index.iife.min.js" onerror="window.__solanaWeb3Failed = true"></script>
+    <!-- Firebase (builds compat v10): sesión con Google y guardado en la nube por wallet.
+         Si el SDK no carga, el juego sigue funcionando solo en local. -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js" onerror="window.__firebaseFailed = true"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js" onerror="window.__firebaseFailed = true"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js" onerror="window.__firebaseFailed = true"></script>
     <script>
       // ---------- Datos de la demo ----------
       // El panel empieza VACÍO: sin soldados, sin transportes y sin TEAMs.
@@ -3075,6 +3097,7 @@
         btn.disabled = false;
         btn.textContent = "Conectar wallet";
         activeUserShow();
+        cloudRefreshStatus();
         // Si el guardado cargado era el de una wallet, al desconectar se
         // guarda ese progreso bajo su clave y se vuelve al usuario invitado.
         if (loadedSavePk) switchToWalletSave(null);
@@ -3141,6 +3164,10 @@
         if (pk !== loadedSavePk && switchToWalletSave(pk)) return;
         walletShowConnected();
         walletRefreshBalances();
+        // Con sesión Google activa, al conectar la wallet se resuelve el
+        // guardado en la nube de esta dirección (sección Firebase).
+        cloudRefreshStatus();
+        if (fbUser) cloudLoadForWallet(pk);
       }
       function walletBindEvents(provider) {
         if (walletEventsBound || !provider || typeof provider.on !== "function") return;
@@ -4545,6 +4572,273 @@
       });
       $("pvpChallengeBtn").addEventListener("click", pvpChallenge);
 
+      // ---------- Firebase: sesión con Google y guardado en la nube por wallet ----------
+      // La wallet ES el usuario; Google es solo la puerta de acceso que las
+      // reglas de Firestore exigen. La nube SOLO se usa cuando hay sesión
+      // Google Y wallet conectada: colección «saves», un documento por wallet
+      // con ID = la dirección completa. El snapshot es EL MISMO objeto que se
+      // guarda en localStorage (formato intercambiable), sobrescrito entero y
+      // con updatedAt = savedAt. Todas las llamadas a Firestore van envueltas:
+      // un fallo (sin conexión, reglas) nunca rompe el juego — se conserva el
+      // guardado local, el estado pasa a «sin sincronizar» y el siguiente
+      // guardado reintenta. Si el SDK no cargó, todo sigue solo en local y el
+      // aviso queda en consola + estado «no disponible».
+      var firebaseConfig = {
+        apiKey: "AIzaSyDn4TJshHHWrVlR2x7yAScn_FcBM3B2udk",
+        authDomain: "armary1.firebaseapp.com",
+        projectId: "armary1",
+        storageBucket: "armary1.firebasestorage.app",
+        messagingSenderId: "537043717167",
+        appId: "1:537043717167:web:b4a4a16f8f1324b2d38ada",
+        measurementId: "G-JVCDF78Z8T"
+      };
+      var fbAuth = null;
+      var fbDb = null;
+      var fbUser = null;
+      var fbReady = false;
+      var cloudState = ""; // Último estado de nube mostrado
+      var cloudLastError = false;
+      var cloudSyncedOk = false;
+      var cloudLoadKey = null; // «wallet|uid» ya resuelto o en curso
+      var cloudLoadPending = false;
+      var cloudPendingSnap = null; // Snapshot retenido mientras se resuelve la carga
+      var cloudWriteInFlight = false;
+      var cloudWritePendingSnap = null;
+      var cloudLastPushedKey = null; // Contenido (sin savedAt) del último snapshot subido bien
+      var cloudAdopting = false; // Adoptando el snapshot de la nube (se recarga)
+
+      function cloudSetStatus(state) {
+        if (state === cloudState) return;
+        cloudState = state;
+        var el = $("cloudStatus");
+        if (!el) return;
+        var txt = "Nube: solo local (inicia sesión con Google para sincronizar)";
+        if (state === "synced") txt = "Nube: sincronizada";
+        else if (state === "unsynced") txt = "Nube: sin sincronizar (revisa tu conexión)";
+        else if (state === "unavailable") txt = "Nube: no disponible";
+        el.textContent = txt;
+      }
+      function cloudRefreshStatus() {
+        if (!fbReady) { cloudSetStatus("unavailable"); return; }
+        if (!fbUser || !walletPk || loadedSavePk !== walletPk) { cloudSetStatus("local"); return; }
+        if (cloudLastError) { cloudSetStatus("unsynced"); return; }
+        if (cloudSyncedOk) cloudSetStatus("synced");
+      }
+      function googleNoteShow(msg) {
+        var n = $("googleNote");
+        if (!n) return;
+        n.textContent = msg;
+        n.hidden = false;
+      }
+      function googleNoteHide() {
+        var n = $("googleNote");
+        if (!n) return;
+        n.hidden = true;
+        n.textContent = "";
+      }
+      // Correo truncado con sensatez: nombre recortado con «…» y dominio entero.
+      function googleEmailShort(email) {
+        if (!email) return "";
+        if (email.length <= 30) return email;
+        var at = email.indexOf("@");
+        var name = at > 0 ? email.slice(0, at) : email;
+        var dom = at > 0 ? email.slice(at) : "";
+        var keep = Math.max(8, 29 - dom.length);
+        return name.slice(0, keep) + "…" + dom;
+      }
+      function googleUiShow() {
+        var inBtn = $("googleSignInBtn"), outBtn = $("googleSignOutBtn"), em = $("googleEmail");
+        if (!inBtn || !outBtn || !em) return;
+        if (fbUser) {
+          inBtn.hidden = true;
+          outBtn.hidden = false;
+          em.hidden = false;
+          em.textContent = googleEmailShort(fbUser.email || "");
+          em.title = fbUser.email || "";
+        } else {
+          inBtn.hidden = false;
+          outBtn.hidden = true;
+          em.hidden = true;
+          em.textContent = "";
+          em.title = "";
+        }
+      }
+      function cloudContentKey(snap) {
+        var c = {};
+        for (var k in snap) { if (k !== "savedAt") c[k] = snap[k]; }
+        try { return JSON.stringify(c); } catch (e) { return null; }
+      }
+      function cloudReadLocalSnap(pk) {
+        try {
+          var raw = localStorage.getItem(SAVE_KEY + "-" + pk);
+          if (!raw) return null;
+          var d = JSON.parse(raw);
+          return isValidSave(d) ? d : null;
+        } catch (e) { return null; }
+      }
+      // Sube un snapshot a Firestore (documento de la wallet conectada). Las
+      // subidas se encadenan: si llega otra mientras una está en curso, se
+      // escribe la más reciente al terminar. Si el contenido (sin savedAt) no
+      // cambió desde la última subida buena, no se reescribe.
+      function cloudPushSnapshot(snap) {
+        if (!snap) return;
+        if (!fbReady || !fbDb) return;
+        if (!fbUser || !walletPk || loadedSavePk !== walletPk) { cloudRefreshStatus(); return; }
+        if (cloudAdopting) return;
+        if (cloudLoadPending) { cloudPendingSnap = snap; return; }
+        var key = walletPk + "|" + fbUser.uid;
+        if (cloudLoadKey !== key) { cloudPendingSnap = snap; cloudLoadForWallet(walletPk); return; }
+        cloudWritePendingSnap = snap;
+        if (cloudWriteInFlight) return;
+        cloudWriteInFlight = true;
+        (function step() {
+          var s = cloudWritePendingSnap;
+          cloudWritePendingSnap = null;
+          if (!s) { cloudWriteInFlight = false; return; }
+          var pk = walletPk;
+          var ckey = cloudContentKey(s);
+          if (ckey && ckey === cloudLastPushedKey) {
+            cloudLastError = false; cloudSyncedOk = true;
+            if (cloudWritePendingSnap) { step(); return; }
+            cloudWriteInFlight = false;
+            cloudRefreshStatus();
+            return;
+          }
+          var data = {};
+          for (var k in s) data[k] = s[k];
+          data.updatedAt = s.savedAt;
+          fbDb.collection("saves").doc(pk).set(data).then(function () {
+            if (ckey) cloudLastPushedKey = ckey;
+            cloudLastError = false; cloudSyncedOk = true;
+            if (cloudWritePendingSnap && fbUser && walletPk === pk) { step(); return; }
+            cloudWriteInFlight = false;
+            cloudRefreshStatus();
+          }, function (err) {
+            console.warn("[Armary] No se pudo guardar en la nube; se conserva el guardado local y se reintentará en el próximo guardado.", err);
+            cloudWriteInFlight = false;
+            cloudWritePendingSnap = null;
+            cloudLastError = true; cloudSyncedOk = false;
+            cloudRefreshStatus();
+          });
+        })();
+      }
+      // Resolución al conectar (wallet con Google activo, o Google con wallet
+      // ya conectada): lee el documento de la wallet; si su savedAt/updatedAt
+      // es más reciente que el guardado local con el que arrancó esta sesión,
+      // se adopta el snapshot de la nube (se guarda en local y se recarga);
+      // si el local es más reciente o no hay documento, se sube el local.
+      function cloudLoadForWallet(pk) {
+        if (!fbReady || !fbDb || !fbUser || !pk) { cloudRefreshStatus(); return; }
+        if (walletPk !== pk || loadedSavePk !== pk) return;
+        var key = pk + "|" + fbUser.uid;
+        if (cloudLoadKey === key || cloudLoadPending) return;
+        cloudLoadKey = key;
+        cloudLoadPending = true;
+        fbDb.collection("saves").doc(pk).get().then(function (doc) {
+          cloudLoadPending = false;
+          if (!fbUser || walletPk !== pk || loadedSavePk !== pk) return;
+          var bootTime = (bootSaveInfo && bootSaveInfo.pk === pk && bootSaveInfo.existed) ? (bootSaveInfo.savedAt || 0) : 0;
+          if (doc.exists) {
+            var data = doc.data() || {};
+            var cloudTime = data.updatedAt || data.savedAt || 0;
+            if (cloudTime > bootTime) {
+              var snap = {};
+              for (var k in data) { if (k !== "updatedAt") snap[k] = data[k]; }
+              if (isValidSave(snap)) {
+                try {
+                  localStorage.setItem(activeSaveKey(), JSON.stringify(snap));
+                  // saveWiped evita que el beforeunload de la recarga pise el
+                  // snapshot adoptado con el estado viejo en memoria.
+                  cloudAdopting = true;
+                  saveWiped = true;
+                  cloudLastError = false; cloudSyncedOk = true;
+                  window.location.reload();
+                  return;
+                } catch (e) {
+                  cloudAdopting = false;
+                  saveWiped = false;
+                }
+              }
+            }
+          }
+          // El local manda (o no hay documento): se sube el snapshot local.
+          var toPush = cloudPendingSnap || cloudReadLocalSnap(pk) || snapshotGame();
+          cloudPendingSnap = null;
+          cloudPushSnapshot(toPush);
+          cloudRefreshStatus();
+        }, function (err) {
+          cloudLoadPending = false;
+          cloudLoadKey = null; // Permitir reintento en la próxima conexión/guardado
+          console.warn("[Armary] No se pudo leer el guardado en la nube; se sigue solo en local.", err);
+          cloudLastError = true; cloudSyncedOk = false;
+          cloudRefreshStatus();
+        });
+      }
+      // Inicialización: si el SDK no cargó, el juego sigue solo en local.
+      try {
+        if (window.__firebaseFailed || typeof firebase === "undefined" || !firebase.initializeApp || !firebase.auth || !firebase.firestore) {
+          throw new Error("SDK de Firebase no disponible");
+        }
+        if (firebase.apps && firebase.apps.length) firebase.app();
+        else firebase.initializeApp(firebaseConfig);
+        fbAuth = firebase.auth();
+        fbDb = firebase.firestore();
+        fbReady = true;
+      } catch (e) {
+        fbReady = false;
+        fbAuth = null;
+        fbDb = null;
+        console.warn("[Armary] Firebase no disponible: el juego sigue funcionando solo en local.", e);
+      }
+      googleUiShow();
+      cloudRefreshStatus();
+      if (fbReady && fbAuth) {
+        fbAuth.onAuthStateChanged(function (user) {
+          fbUser = user || null;
+          if (!fbUser) {
+            // Al cerrar sesión se detiene la sincronización y se sigue en
+            // local; el documento en la nube queda intacto.
+            cloudLoadKey = null;
+            cloudSyncedOk = false;
+            cloudLastError = false;
+            cloudPendingSnap = null;
+          }
+          googleUiShow();
+          cloudRefreshStatus();
+          if (fbUser && walletPk) cloudLoadForWallet(walletPk);
+        });
+      }
+      $("googleSignInBtn").addEventListener("click", function () {
+        googleNoteHide();
+        if (!fbReady || !fbAuth) {
+          googleNoteShow("La nube no está disponible en este momento; el juego sigue solo en local.");
+          cloudSetStatus("unavailable");
+          return;
+        }
+        var provider = new firebase.auth.GoogleAuthProvider();
+        fbAuth.signInWithPopup(provider).then(function () {
+          googleNoteHide();
+          if (walletPk) cloudLoadForWallet(walletPk);
+        }).catch(function (err) {
+          var code = err && err.code ? err.code : "";
+          var msg = "No se pudo iniciar sesión con Google. Inténtalo de nuevo.";
+          if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") msg = "Inicio de sesión cancelado.";
+          else if (code === "auth/popup-blocked") msg = "El navegador bloqueó la ventana de Google. Permite las ventanas emergentes e inténtalo de nuevo.";
+          else if (code === "auth/unauthorized-domain") msg = "Este dominio no está autorizado en Firebase para iniciar sesión con Google.";
+          else if (code === "auth/network-request-failed") msg = "Sin conexión: no se pudo iniciar sesión con Google.";
+          console.warn("[Armary] Error al iniciar sesión con Google:", err);
+          googleNoteShow(msg);
+        });
+      });
+      $("googleSignOutBtn").addEventListener("click", function () {
+        if (!fbReady || !fbAuth) return;
+        fbAuth.signOut().then(function () {
+          googleNoteHide();
+        }).catch(function (err) {
+          console.warn("[Armary] Error al cerrar la sesión de Google:", err);
+        });
+      });
+
       // ---------- Guardado persistente en el navegador (localStorage) ----------
       // Todo el progreso de la demo se guarda en el navegador del jugador bajo
       // una clave versionada: al cerrar y volver a abrir la página, el juego se
@@ -4569,6 +4863,10 @@
       var SAVE_VERSION = 1;
       var loadedSavePk = null; // Wallet del guardado cargado (null = invitado)
       try { loadedSavePk = localStorage.getItem(ACTIVE_WALLET_KEY) || null; } catch (e) { loadedSavePk = null; }
+      // Guardado local tal cual estaba al arrancar (lo rellena loadGame):
+      // la sincronización en la nube compara contra ESTA marca, no contra el
+      // savedAt del guardado vivo, que se reescribe continuamente al jugar.
+      var bootSaveInfo = { pk: null, existed: false, savedAt: 0 };
       function activeSaveKey() { return loadedSavePk ? SAVE_KEY + "-" + loadedSavePk : SAVE_KEY; }
       // Cambia el usuario activo: guarda el progreso actual bajo la clave del
       // usuario saliente, recuerda la wallet entrante (null = invitado) y
@@ -4629,10 +4927,14 @@
       function saveGame() {
         if (saveWiped) return;
         try {
-          var json = JSON.stringify(snapshotGame());
+          var snap = snapshotGame();
+          var json = JSON.stringify(snap);
           if (json === lastSaveJson) return; // Sin cambios: no se reescribe
           lastSaveJson = json;
           localStorage.setItem(activeSaveKey(), json);
+          // Mismo snapshot a la nube, si hay sesión Google y wallet (la
+          // función envuelve sus fallos: nunca rompe el guardado local).
+          cloudPushSnapshot(snap);
         } catch (e) {
           // Almacenamiento no disponible (modo privado, cuota…): el juego
           // sigue funcionando en memoria, como antes del guardado.
@@ -4659,10 +4961,11 @@
       function loadGame() {
         var raw = null;
         try { raw = localStorage.getItem(activeSaveKey()); } catch (e) { return; }
-        if (!raw) return; // Sin guardado: arranque normal en 500.000 $ARMY
+        if (!raw) { bootSaveInfo = { pk: loadedSavePk, existed: false, savedAt: 0 }; return; } // Sin guardado: arranque normal en 500.000 $ARMY
         var d = null;
         try { d = JSON.parse(raw); } catch (e) { discardSave(); return; }
         if (!isValidSave(d)) { discardSave(); return; }
+        bootSaveInfo = { pk: loadedSavePk, existed: true, savedAt: typeof d.savedAt === "number" ? d.savedAt : 0 };
         try {
           state.balance = d.state.balance;
           state.earned = d.state.earned;
