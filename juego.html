@@ -1448,7 +1448,7 @@
         <p class="section-sub">Recluta, necesitas armar un TEAM para poder ir a las misiones. Cada TEAM puede llevar <b>hasta 5 transportes</b>, y los espacios de todos se suman para tus soldados. La rareza de tus soldados determina la <b>EXP del TEAM</b>, y la EXP precisa a qué misiones está capacitado. Y ojo: <b>sin municiones no hay despliegue</b> — cada TEAM guarda su propio almacén de municiones y lo gasta en cada misión. Armar un TEAM nuevo cuesta <b>2.000 $ARMY</b>, que se descuentan de tu balance al guardar; editar un TEAM ya creado no cuesta.</p>
 
         <h2 class="section-title" style="margin-top:6px">TUS TEAMS</h2>
-        <p class="section-sub">TEAMs listos para desplegar. Cada tarjeta muestra su almacén de <b>municiones</b> y para cuántos despliegues alcanza: desde ahí mismo puedes comprar más. También puedes desarmarlos o editarlos para recuperar sus soldados y sus transportes — salvo mientras el TEAM está <b>bloqueado</b> tras una misión: sus soldados están de vuelta y tardan <b>24 horas</b> en regresar a la base (en esta demo, <b>1 minuto</b>), y bloqueado <b>no tiene ninguna acción disponible</b>: ni desplegar, ni editar, ni comprar municiones, ni desarmarlo. Cada tarjeta muestra el <b>nivel del TEAM</b> (empieza en 0, sube 1 por cada 2 expediciones, máximo 30) y su progreso hacia el siguiente nivel: <b>ojo, desarmar un TEAM pierde todos sus niveles</b>; editarlo no. Si un transporte del TEAM está <b>dañado</b> o <b>en el taller</b>, su tarjeta lo avisa y el TEAM <b>no puede desplegar</b> hasta repararlo o cambiarlo por uno sano.</p>
+        <p class="section-sub">TEAMs listos para desplegar. Cada tarjeta muestra su almacén de <b>municiones</b> y para cuántos despliegues alcanza: desde ahí mismo puedes comprar más. También puedes desarmarlos o editarlos para recuperar sus soldados y sus transportes — salvo mientras el TEAM está <b>bloqueado</b> tras una misión: sus soldados están de vuelta y tardan <b>24 horas</b> en regresar a la base, y bloqueado <b>no tiene ninguna acción disponible</b>: ni desplegar, ni editar, ni comprar municiones, ni desarmarlo. Cada tarjeta muestra el <b>nivel del TEAM</b> (empieza en 0, sube 1 por cada 2 expediciones, máximo 30) y su progreso hacia el siguiente nivel: <b>ojo, desarmar un TEAM pierde todos sus niveles</b>; editarlo no. Si un transporte del TEAM está <b>dañado</b> o <b>en el taller</b>, su tarjeta lo avisa y el TEAM <b>no puede desplegar</b> hasta repararlo o cambiarlo por uno sano.</p>
         <div class="team-grid" id="teamGrid"></div>
         <p class="empty-note" id="teamsEmpty" style="display:none">Arma tu primer TEAM: elige un transporte y asígnale tus soldados con el constructor de abajo. Si aún no tienes soldados ni transportes, consíguelos primero en <b>Mintear NFT</b>.</p>
 
@@ -1494,7 +1494,7 @@
       <!-- ======== Vista: Misiones ======== -->
       <section class="view" id="view-misiones" aria-label="Misiones">
         <h2 class="section-title">MISIONES</h2>
-        <p class="section-sub">Despliegas un <b>TEAM</b> completo: cada misión exige una <b>EXP mínima</b> y, si tu TEAM la supera, el excedente suma <b>probabilidad de éxito</b> (+1% por cada 10 EXP de excedente, con tope por misión); cada despliegue además <b>consume las municiones</b> del almacén del TEAM. Si el TEAM <b>falla</b>, sus soldados sufren <b>desgaste</b> (pierden XP según la misión) y cada transporte tiene un <b>30% de probabilidad de dañarse</b>; y al terminar cada expedición, gane o pierda, el TEAM queda <b>bloqueado</b> — sus soldados tardan <b>24 horas</b> en regresar a la base (en esta demo, <b>1 minuto</b>) — sin poder desplegar, editarse ni desarmarse hasta que termine el bloqueo.</p>
+        <p class="section-sub">Despliegas un <b>TEAM</b> completo: cada misión exige una <b>EXP mínima</b> y, si tu TEAM la supera, el excedente suma <b>probabilidad de éxito</b> (+1% por cada 10 EXP de excedente, con tope por misión); cada despliegue además <b>consume las municiones</b> del almacén del TEAM. Si el TEAM <b>falla</b>, sus soldados sufren <b>desgaste</b> (pierden XP según la misión) y cada transporte tiene un <b>30% de probabilidad de dañarse</b>; y al terminar cada expedición, gane o pierda, el TEAM queda <b>bloqueado</b> — sus soldados tardan <b>24 horas</b> en regresar a la base — sin poder desplegar, editarse ni desarmarse hasta que termine el bloqueo.</p>
 
         <div class="team-select-bar">
           <label for="missionTeamSel">TEAM a desplegar</label>
@@ -1734,8 +1734,8 @@
       // base. El bloqueo es TOTAL: no puede desplegar, ni editarse, ni comprar
       // municiones y TAMPOCO desarmarse; ninguna acción disponible hasta que los
       // soldados regresen a la base y termine el bloqueo.
-      // DEMO: el bloqueo dura 1 minuto solo para poder probarlo; el tiempo real será 24 horas.
-      var RETURN_MS = 60 * 1000;
+      // El bloqueo dura 24 horas reales, también en la demo.
+      var RETURN_MS = 24 * 60 * 60 * 1000;
 
       var MISSIONS = [
         { id: "m1", name: "Patrulla Fronteriza", diff: "Fácil", base: 90, cap: 95, reward: 5000, reqExp: 60, xpLoss: 1,
@@ -2432,7 +2432,7 @@
             (tIssue ? '<div class="req-note"><span class="pixel">' + (tIssue.status.key === "danado" ? "TRANSPORTE DAÑADO" : "TRANSPORTE EN EL TALLER") + '</span>«' + instanceLabel(tIssue.inst) + '» ' + (tIssue.status.key === "danado"
               ? 'se dañó en una colisión: este TEAM <b>no puede desplegar</b> hasta que lo envíes al TALLER en «Mis Transportes» (24 h de reparación, sin costo) o edites el TEAM y lo cambies por un transporte sano.'
               : 'está en el taller: este TEAM <b>no puede desplegar</b> hasta que salga (listo en <span class="js-repair-left" data-until="' + tIssue.inst.repairUntil + '">' + fmtCountdown(tIssue.inst.repairUntil - Date.now()) + '</span>) o edites el TEAM y lo cambies por un transporte sano.') + '</div>' : '') +
-            (teamLocked ? '<div class="req-note"><span class="pixel">TEAM BLOQUEADO</span>Los soldados de este TEAM están de vuelta: tardan <b>24 horas</b> en regresar a la base (en esta demo, <b>1 minuto</b>). Mientras tanto el TEAM está <b>completamente bloqueado</b>, <b>sin ninguna acción disponible</b>: <b>no puede desplegar</b>, <b>no se puede editar</b> su composición, <b>ni comprar municiones</b>, <b>ni desarmarse</b>. Hay que esperar a que los soldados regresen a la base. De vuelta en la base en <b><span class="js-lock-left" data-until="' + team.lockedUntil + '">' + fmtCountdown(team.lockedUntil - Date.now()) + '</span></b>.</div>' : '') +
+            (teamLocked ? '<div class="req-note"><span class="pixel">TEAM BLOQUEADO</span>Los soldados de este TEAM están de vuelta: tardan <b>24 horas</b> en regresar a la base. Mientras tanto el TEAM está <b>completamente bloqueado</b>, <b>sin ninguna acción disponible</b>: <b>no puede desplegar</b>, <b>no se puede editar</b> su composición, <b>ni comprar municiones</b>, <b>ni desarmarse</b>. Hay que esperar a que los soldados regresen a la base. De vuelta en la base en <b><span class="js-lock-left" data-until="' + team.lockedUntil + '">' + fmtCountdown(team.lockedUntil - Date.now()) + '</span></b>.</div>' : '') +
             '<ul class="team-members">' + members + '</ul>' +
             '<div class="team-ammo' + (deploys === 0 ? " low" : "") + '"><span class="lbl">Municiones</span><b>' + fmt(ammo) + '</b> en almacén · consume <b>' + aCost + '</b> por despliegue · alcanza para <b>' + deploys + ' despliegue' + (deploys === 1 ? "" : "s") + '</b>' + (deploys === 0 ? ' — sin municiones suficientes este TEAM no puede desplegar.' : '') + '</div>' +
             '<div class="team-missions"><span class="lbl">Capacitado para</span>' + chips + '</div>' +
@@ -2942,9 +2942,9 @@
           // Bloqueo de TEAM: al completar la misión, GANE O PIERDA, el TEAM queda
           // bloqueado porque sus soldados están de vuelta y tardan en regresar a la
           // base. El bloqueo es TOTAL: bloqueado no puede desplegar, ni editarse,
-          // ni comprar municiones, ni desarmarse. Demo: 1 minuto (real: 24 horas).
+          // ni comprar municiones, ni desarmarse. Dura 24 horas reales, también en la demo.
           team.lockedUntil = Date.now() + RETURN_MS;
-          var lockTxt = ' El TEAM «' + team.name + '» queda <b>completamente BLOQUEADO</b>: sus soldados están de vuelta y tardan <b>24 horas</b> en regresar a la base (en esta demo, <b>1 minuto</b>). Mientras tanto <b>no</b> puede desplegar, <b>ni</b> editarse, <b>ni</b> comprar municiones, <b>ni desarmarse</b>: ninguna acción disponible hasta que los soldados regresen a la base. La cuenta atrás se ve en su tarjeta y en la barra de Misiones.';
+          var lockTxt = ' El TEAM «' + team.name + '» queda <b>completamente BLOQUEADO</b>: sus soldados están de vuelta y tardan <b>24 horas</b> en regresar a la base. Mientras tanto <b>no</b> puede desplegar, <b>ni</b> editarse, <b>ni</b> comprar municiones, <b>ni desarmarse</b>: ninguna acción disponible hasta que los soldados regresen a la base. La cuenta atrás se ve en su tarjeta y en la barra de Misiones.';
           card.classList.remove("is-running");
           state.running = false;
           state.completed += 1;
@@ -5616,7 +5616,7 @@
       // re-render completo (reparaciones del taller y bloqueos de TEAM) y,
       // cuando un tiempo se cumple, el estado se libera automáticamente
       // (refreshAll con settleRepairs / settleTeamLocks).
-      // Corre cada segundo porque el bloqueo de la demo dura solo 1 minuto.
+      // Corre cada segundo para que las cuentas atrás se vean en vivo.
       window.setInterval(function () {
         var now = Date.now();
         Array.prototype.forEach.call(document.querySelectorAll(".js-repair-left"), function (el) {
