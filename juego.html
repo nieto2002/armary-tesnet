@@ -1201,6 +1201,22 @@
       .rank-team { display: block; font-size: 0.76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .rank-score { font-family: "Press Start 2P", monospace; font-size: 0.78rem; color: var(--gold); }
       .rank-note { margin: 10px 0 4px; font-size: 0.8rem; color: var(--muted); }
+      /* ---------- Ranking Testnet (vista propia, distinta del RANKING de PvP) ---------- */
+      .lb-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+      .lb-progress { display: flex; flex-wrap: wrap; gap: 10px 22px; background: var(--panel); border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--shadow); padding: 14px 18px; margin-bottom: 16px; font-size: 0.97rem; }
+      .lb-progress b { color: var(--accent); }
+      .lb-badge { display: inline-block; font-family: "Press Start 2P", monospace; font-size: 0.55rem; padding: 6px 8px; border: 2px solid rgba(0,0,0,0.35); color: #fff; text-shadow: 1px 1px 0 rgba(0,0,0,0.4); background: var(--accent); }
+      .lb-badge.no { background: var(--panel-2); color: var(--muted); border-color: var(--edge-soft); text-shadow: none; }
+      .lb-list { display: flex; flex-direction: column; background: var(--panel); border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--shadow); }
+      .lb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 11px 16px; border-bottom: 2px dashed var(--edge-soft); font-size: 0.94rem; }
+      .lb-row:last-child { border-bottom: none; }
+      .lb-row.me { background: rgba(255, 194, 31, 0.14); box-shadow: inset 0 0 0 2px var(--gold); }
+      .lb-row.head { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--panel-2); }
+      .lb-pos { font-family: "Press Start 2P", monospace; font-size: 0.72rem; color: var(--muted); min-width: 38px; }
+      .lb-pos.p1 { color: var(--gold); }
+      .lb-wallet { font-family: "Press Start 2P", monospace; font-size: 0.72rem; min-width: 110px; }
+      .lb-num { font-weight: 700; } .lb-num span { display: block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+      @media (max-width: 640px) { .lb-stats { grid-template-columns: 1fr; } .lb-row.head { display: none; } }
       @media (max-width: 900px) {
         .pvp-arena { flex-direction: column; }
         .pvp-main { width: 100%; }
@@ -1281,6 +1297,7 @@
         <button class="menu-btn" type="button" data-view="team">Team<span class="cnt" id="menuTeamCount">0</span></button>
         <button class="menu-btn" type="button" data-view="misiones">Misiones</button>
         <button class="menu-btn" type="button" data-view="pvp">PvP</button>
+        <button class="menu-btn" type="button" data-view="ranking">Ranking</button>
         <button class="menu-btn" type="button" data-view="marketplace">Marketplace</button>
       </div>
     </nav>
@@ -1648,6 +1665,24 @@
 
       </section>
 
+      <!-- ======== Vista: Ranking Testnet ======== -->
+      <section class="view" id="view-ranking" aria-label="Ranking testnet">
+        <h2 class="section-title">RANKING TESTNET</h2>
+        <p class="section-sub">Puntos de toda la testnet, calculados desde tus contadores: misión ganada <b>+10</b>, perdida <b>+2</b>; nivel máximo de TEAM 10/20/30 <b>+50/+100/+200</b> (acumulativos, una vez cada uno); duelo con apuesta jugado <b>+5</b> y ganado <b>+15</b> más. La práctica no cuenta. Para <b>calificar</b> necesitas wallet + Google conectados y una de estas: <b>20 misiones completadas</b>, un <b>TEAM a nivel 10</b> o <b>10 duelos con apuesta jugados</b>. Si calificas: <b>1 boleto base + 1 por cada 100 puntos</b> para el sorteo del legendario.</p>
+        <div class="lb-stats" aria-label="Tus números del ranking">
+          <div class="stat"><span class="num" id="rankMyPoints">0</span><span class="lbl">Tus puntos</span></div>
+          <div class="stat"><span class="num" id="rankMyTickets">0</span><span class="lbl">Tus boletos</span></div>
+          <div class="stat"><span class="num" id="rankMyQual" style="font-size:0.95rem;padding-top:10px">—</span><span class="lbl">Calificación</span></div>
+        </div>
+        <div class="lb-progress" id="rankProgress" aria-live="polite"></div>
+        <div id="rankNotice"></div>
+        <p style="margin:0 0 16px"><button class="btn" type="button" id="rankRefreshBtn">Actualizar ranking</button></p>
+        <div class="lb-list" id="leaderboardList" aria-label="Top 25 del ranking testnet"></div>
+        <div id="rankOutside"></div>
+        <h2 class="section-title">PREMIOS (SOLO INFORMATIVO)</h2>
+        <p class="section-sub">Los premios se entregan en mainnet como lista registrada de ganadores; aquí no se entrega ni se mintea nada. <b>Top 1 · pack Dorado:</b> 2 Cajas de Recluta + 1 Caja de Transporte + 10.000 $ARMY en municiones. <b>Top 2 · pack Plata:</b> 1 Caja de Recluta + 1 Caja de Transporte (sin municiones). <b>Top 3 · pack Bronce:</b> 1 Caja de Recluta. <b>Top 4–25 · pack Básico:</b> 1 soldado Común. Además, sorteo en vivo de un <b>soldado legendario único (1/1), potente, con XP 300</b>, entre los calificados según sus boletos, y <b>$ARMY posterior pendiente</b> de definir monto y tope. El <b>feedback verificado suma +50 en el cierre</b>, con revisión manual fuera del juego: no se cuenta automáticamente aquí.</p>
+      </section>
+
       <!-- ======== Vista: Marketplace ======== -->
       <section class="view" id="view-marketplace" aria-label="Marketplace">
         <h2 class="section-title">MARKETPLACE</h2>
@@ -1783,6 +1818,61 @@
       var builder = { transportIds: [], soldierIds: [], editingId: null, ammoPacks: 0 };
       var ammoShop = { teamId: null, packs: 1 };
       var disbandPendingId = null; // TEAM pendiente de confirmar el desarme (avisa de la pérdida de niveles)
+
+      // ---------- Ranking Testnet: contadores (parte del guardado) ----------
+      // Los puntos y boletos NUNCA se acumulan por separado: se calculan
+      // siempre desde estos contadores. Guardados viejos sin contadores
+      // arrancan en 0, salvo maxTeamLevel, que se inicializa desde los TEAMs
+      // existentes al cargar. Sin retroactivo: el conteo empieza al publicar.
+      var testnetStats = { missionsWon: 0, missionsLost: 0, maxTeamLevel: 0, betDuelsPlayed: 0, betDuelsWon: 0, betDuelsApplied: {} };
+      function tsNum(v) { var n = Number(v); return isFinite(n) && n > 0 ? Math.floor(n) : 0; }
+      function tsNorm(ts) {
+        ts = ts && typeof ts === "object" ? ts : {};
+        return {
+          missionsWon: tsNum(ts.missionsWon), missionsLost: tsNum(ts.missionsLost),
+          maxTeamLevel: tsNum(ts.maxTeamLevel), betDuelsPlayed: tsNum(ts.betDuelsPlayed),
+          betDuelsWon: tsNum(ts.betDuelsWon),
+          betDuelsApplied: ts.betDuelsApplied && typeof ts.betDuelsApplied === "object" ? ts.betDuelsApplied : {}
+        };
+      }
+      function tsEnsure() { testnetStats = tsNorm(testnetStats); return testnetStats; }
+      function tsMilestones(lvl) { var b = 0; if (lvl >= 10) b += 50; if (lvl >= 20) b += 100; if (lvl >= 30) b += 200; return b; }
+      function tsPointsFrom(ts) {
+        var s = tsNorm(ts);
+        return s.missionsWon * 10 + s.missionsLost * 2 + tsMilestones(s.maxTeamLevel) + s.betDuelsPlayed * 5 + s.betDuelsWon * 15;
+      }
+      function tsPoints() { return tsPointsFrom(testnetStats); }
+      function tsMissionsTotalFrom(ts) { var s = tsNorm(ts); return s.missionsWon + s.missionsLost; }
+      function tsThresholdFrom(ts) {
+        var s = tsNorm(ts);
+        return (s.missionsWon + s.missionsLost) >= 20 || s.maxTeamLevel >= 10 || s.betDuelsPlayed >= 10;
+      }
+      function tsThreshold() { return tsThresholdFrom(testnetStats); }
+      // Calificado = wallet + Google conectados Y un umbral cumplido. La vía
+      // de feedback verificado es EXTERNA: no se cuenta automáticamente.
+      function tsIsQualified() {
+        var hasWallet = typeof walletPk !== "undefined" && !!walletPk;
+        var hasGoogle = typeof fbUser !== "undefined" && !!fbUser;
+        return hasWallet && hasGoogle && tsThreshold();
+      }
+      function tsTicketsFrom(ts, qualified) { var p = tsPointsFrom(ts); return qualified ? 1 + Math.floor(p / 100) : 0; }
+      function tsTickets() { return tsTicketsFrom(testnetStats, tsIsQualified()); }
+      function tsUpdateMaxLevel() {
+        tsEnsure();
+        var m = testnetStats.maxTeamLevel;
+        if (typeof teams !== "undefined" && typeof teamLevel === "function") {
+          teams.forEach(function (t) { var l = teamLevel(t); if (l > m) m = l; });
+        }
+        testnetStats.maxTeamLevel = m;
+        return m;
+      }
+      function tsMarkDuelWon(duelId) {
+        tsEnsure();
+        if (!duelId || testnetStats.betDuelsApplied[duelId]) return false;
+        testnetStats.betDuelsApplied[duelId] = true;
+        testnetStats.betDuelsWon += 1;
+        return true;
+      }
 
       function $(id) { return document.getElementById(id); }
       function fmt(n) { return n.toLocaleString("es-VE"); }
@@ -1990,6 +2080,8 @@
         // Al entrar a PvP se revisan los duelos asincrónicos propios:
         // premios por cobrar y retos vencidos (sección de duelos con apuesta).
         if (name === "pvp" && typeof pvpDuelsSync === "function") pvpDuelsSync();
+        if (name === "ranking" && typeof fetchLeaderboard === "function") fetchLeaderboard();
+        else if (name === "ranking" && typeof renderRankingHeader === "function") renderRankingHeader();
         Array.prototype.forEach.call(document.querySelectorAll(".menu-btn[data-view]"), function (b) {
           b.classList.toggle("active", b.getAttribute("data-view") === name);
         });
@@ -2948,12 +3040,16 @@
           card.classList.remove("is-running");
           state.running = false;
           state.completed += 1;
+          // Contadores del Ranking Testnet: victoria +1 a missionsWon, derrota +1 a missionsLost.
+          tsEnsure();
+          if (success) testnetStats.missionsWon += 1; else testnetStats.missionsLost += 1;
           // Niveles de TEAM: la expedición cuenta GANE O PIERDA (cada 2 sube 1 nivel).
           // El bono de nivel que se aplica a ESTA misión es el del nivel con el que
           // el TEAM desplegó (lvlBefore); la subida, si la hay, rige desde la próxima.
           var lvlBefore = teamLevel(team);
           var lbD = levelBonusPct(lvlBefore);
           team.expeditions = teamExpeditions(team) + 1;
+          tsUpdateMaxLevel();
           var lvlAfter = teamLevel(team);
           var leveledUp = lvlAfter > lvlBefore;
           var levelUpTxt = leveledUp
@@ -4707,6 +4803,8 @@
           appliedMatcher: false
         };
         pvpDuelsCol().add(doc).then(function (ref) {
+          // Ranking Testnet: el retador suma +1 a betDuelsPlayed al crear el reto (terminó su partida).
+          tsEnsure(); testnetStats.betDuelsPlayed += 1;
           myDuelsCache.unshift({ id: ref.id, d: doc });
           $("duelBetHeadline").textContent = "RETO EN ESPERA";
           $("duelBetVersus").innerHTML = "Tu puntaje quedó como reto en el <b>Bracket " + pi.bracket.name + "</b> con apuesta de <b>" + fmt(bet) + " $ARMY</b>. El primer jugador de tu bracket y apuesta que busque rival se emparejará contigo y jugará su partida contra tu puntaje.";
@@ -4765,6 +4863,8 @@
             status: "resolved",
             result: result
           }).then(function () {
+            // Ranking Testnet: el buscador suma +1 a betDuelsPlayed al reclamar y jugar su partida (resolución procesada aquí).
+            tsEnsure(); testnetStats.betDuelsPlayed += 1;
             var found = false;
             for (var i = 0; i < myDuelsCache.length; i++) {
               if (myDuelsCache[i].id === id) {
@@ -4887,6 +4987,11 @@
           var bet = Number(d.bet) || 0;
           if (!(bet > 0)) return null;
           var outcome = pvpOutcomeFor(d, me);
+          // Ranking Testnet: +1 a betDuelsWon solo cuando ESTE cliente procesa
+          // una resolución donde él es el ganador (buscador al reclamar vía
+          // pvpResolveClaimed → aquí; retador al refrescar sus retos en
+          // pvpDuelsSync → aquí). betDuelsApplied[duelId] impide acreditar dos veces.
+          if (outcome === "win") tsMarkDuelWon(id);
           var net = 0;
           if (outcome === "win") { var prize = pvpPrizeOf(bet); state.balance += prize; state.earned += prize; net = prize - bet; }
           else if (outcome === "tie") { state.balance += bet; net = 0; }
@@ -5114,6 +5219,107 @@
         if (btn) pvpCancelDuel(btn.getAttribute("data-cancel-duel"), btn);
       });
 
+      // ---------- Ranking Testnet: vista propia «Ranking» ----------
+      // Lee SOLO la colección «leaderboard» (nunca los saves de nadie).
+      // Datos ajenos: escapados con escHtml y forzados a número con tsNum.
+      var leaderboardRows = [];
+      var leaderboardState = "idle"; // idle | loading | ok | error | unavailable
+      function rankWalletShort(w) { return typeof w === "string" && w.length > 8 ? w.slice(0, 4) + "…" + w.slice(-4) : "—"; }
+      function renderRankingHeader() {
+        var pEl = $("rankMyPoints"); if (!pEl) return;
+        tsEnsure(); tsUpdateMaxLevel();
+        var pts = tsPoints(), tix = tsTickets(), qual = tsIsQualified(), thr = tsThreshold();
+        pEl.textContent = fmt(pts);
+        $("rankMyTickets").textContent = fmt(tix);
+        var qEl = $("rankMyQual");
+        qEl.textContent = qual ? "CALIFICADO" : "NO CALIFICADO";
+        qEl.style.color = qual ? "var(--ok)" : "var(--muted)";
+        var total = tsMissionsTotalFrom(testnetStats);
+        $("rankProgress").innerHTML =
+          "<span>Progreso: misiones <b>" + total + "/20</b></span>" +
+          "<span>nivel máx. <b>" + testnetStats.maxTeamLevel + "/10</b></span>" +
+          "<span>duelos con apuesta <b>" + testnetStats.betDuelsPlayed + "/10</b></span>" +
+          "<span>" + (thr ? "Umbral cumplido ✓" : "Te falta cumplir uno de los tres umbrales") + "</span>" +
+          "<span style='flex-basis:100%;font-size:0.88rem;color:var(--muted)'>Desglose: " + testnetStats.missionsWon + " ganadas · " + testnetStats.missionsLost + " perdidas · hitos de nivel +" + tsMilestones(testnetStats.maxTeamLevel) + " · " + testnetStats.betDuelsPlayed + " duelos jugados · " + testnetStats.betDuelsWon + " ganados. Boletos: " + (qual ? "1 base + 1 por cada 100 puntos" : "0 hasta calificar (wallet + Google + un umbral)") + ".</span>";
+        var notice = $("rankNotice");
+        var hasWallet = typeof walletPk !== "undefined" && !!walletPk;
+        var hasGoogle = typeof fbUser !== "undefined" && !!fbUser;
+        if (!hasWallet || !hasGoogle) {
+          notice.innerHTML = '<div class="req-note"><span class="pixel">PARA ENTRAR AL RANKING</span>Conecta tu <b>wallet</b> e inicia sesión con <b>Google</b> en el encabezado para entrar al ranking. Como invitado tus contadores se acumulan solo en este dispositivo y no entran al ranking; al conectar una wallet, el guardado de invitado no se traslada (como ya ocurre hoy).</div>';
+        } else if (leaderboardState === "error" || leaderboardState === "unavailable") {
+          notice.innerHTML = '<div class="chance" style="margin-bottom:16px">El ranking en la nube no está disponible por ahora (puede que la colección «leaderboard» o sus reglas aún no existan). Tu juego y tus contadores siguen intactos en local: pulsa «Actualizar ranking» para reintentar.</div>';
+        } else {
+          notice.innerHTML = "";
+        }
+        renderLeaderboardList();
+      }
+      function renderLeaderboardList() {
+        var list = $("leaderboardList"); if (!list) return;
+        var out = $("rankOutside"); if (!out) return;
+        if (leaderboardState === "loading") { list.innerHTML = '<div class="lb-row">Cargando ranking…</div>'; out.innerHTML = ""; return; }
+        if (!leaderboardRows.length) {
+          list.innerHTML = '<div class="lb-row">Todavía no hay jugadores en el ranking. Cuando un jugador calificado sincronice con Google + wallet, aparecerá aquí.</div>';
+          out.innerHTML = ""; return;
+        }
+        var sorted = leaderboardRows.slice().sort(function (a, b) { return (b.points || 0) - (a.points || 0); });
+        var top = sorted.slice(0, 25);
+        var meWallet = typeof walletPk !== "undefined" ? walletPk : null;
+        var head = '<div class="lb-row head"><span class="lb-pos">#</span><span class="lb-wallet">Wallet</span><span class="lb-num">Puntos</span><span class="lb-num">Boletos</span><span class="lb-num">Misiones</span><span class="lb-num">Nivel máx</span><span class="lb-num">Duelos</span><span>Estado</span></div>';
+        list.innerHTML = head + top.map(function (r, i) {
+          var isMe = meWallet && r.wallet === meWallet;
+          return '<div class="lb-row' + (isMe ? " me" : "") + '">' +
+            '<span class="lb-pos' + (i === 0 ? " p1" : "") + '">#' + (i + 1) + "</span>" +
+            '<span class="lb-wallet" title="' + escHtml(r.wallet || "") + '">' + escHtml(rankWalletShort(r.wallet)) + (isMe ? " · TÚ" : "") + "</span>" +
+            '<span class="lb-num"><span>Puntos</span>' + fmt(r.points || 0) + "</span>" +
+            '<span class="lb-num"><span>Boletos</span>' + fmt(r.tickets || 0) + "</span>" +
+            '<span class="lb-num"><span>Misiones</span>' + fmt((r.missionsWon || 0) + (r.missionsLost || 0)) + "</span>" +
+            '<span class="lb-num"><span>Nivel máx</span>' + fmt(r.maxTeamLevel || 0) + "</span>" +
+            '<span class="lb-num"><span>Duelos</span>' + fmt(r.betDuelsPlayed || 0) + "</span>" +
+            (r.qualified ? '<span class="lb-badge">Calificado</span>' : '<span class="lb-badge no">Sin calificar</span>') +
+            "</div>";
+        }).join("");
+        // Fila TÚ si el jugador queda fuera del Top 25 (o aún no está en la nube)
+        var myIdx = -1;
+        if (meWallet) { for (var i = 0; i < sorted.length; i++) { if (sorted[i].wallet === meWallet) { myIdx = i; break; } } }
+        if (meWallet && myIdx >= 25) {
+          var mr = sorted[myIdx];
+          out.innerHTML = '<div class="lb-list" style="margin-top:14px"><div class="lb-row me"><span class="lb-pos">#' + (myIdx + 1) + '</span><span class="lb-wallet">' + escHtml(rankWalletShort(mr.wallet)) + ' · TÚ</span><span class="lb-num"><span>Puntos</span>' + fmt(mr.points || 0) + '</span><span class="lb-num"><span>Boletos</span>' + fmt(mr.tickets || 0) + '</span><span class="lb-num"><span>Misiones</span>' + fmt((mr.missionsWon || 0) + (mr.missionsLost || 0)) + '</span><span class="lb-num"><span>Nivel máx</span>' + fmt(mr.maxTeamLevel || 0) + '</span><span class="lb-num"><span>Duelos</span>' + fmt(mr.betDuelsPlayed || 0) + "</span>" + (mr.qualified ? '<span class="lb-badge">Calificado</span>' : '<span class="lb-badge no">Sin calificar</span>') + "</div></div>";
+        } else if (!meWallet || myIdx === -1) {
+          // Sin fila en la nube todavía: se muestra la fila local como TÚ, fuera del Top 25
+          tsEnsure();
+          out.innerHTML = '<div class="lb-list" style="margin-top:14px"><div class="lb-row me"><span class="lb-pos">—</span><span class="lb-wallet">' + (meWallet ? escHtml(rankWalletShort(meWallet)) : "Invitado") + ' · TÚ</span><span class="lb-num"><span>Puntos</span>' + fmt(tsPoints()) + '</span><span class="lb-num"><span>Boletos</span>' + fmt(tsTickets()) + '</span><span class="lb-num"><span>Misiones</span>' + fmt(tsMissionsTotalFrom(testnetStats)) + '</span><span class="lb-num"><span>Nivel máx</span>' + fmt(testnetStats.maxTeamLevel) + '</span><span class="lb-num"><span>Duelos</span>' + fmt(testnetStats.betDuelsPlayed) + "</span>" + (tsIsQualified() ? '<span class="lb-badge">Calificado</span>' : '<span class="lb-badge no">Sin calificar</span>') + "</div></div>" +
+            '<p class="rank-note">Tu fila de arriba es local: entrarás en la tabla cuando sincronices con Google + wallet conectados.</p>';
+        } else {
+          out.innerHTML = "";
+        }
+      }
+      function fetchLeaderboard() {
+        renderRankingHeader();
+        var fbOk = typeof fbReady !== "undefined" && fbReady && typeof fbDb !== "undefined" && fbDb;
+        if (!fbOk) { leaderboardState = "unavailable"; renderRankingHeader(); return; }
+        leaderboardState = "loading"; renderLeaderboardList();
+        fbDb.collection("leaderboard").get().then(function (snap) {
+          var rows = [];
+          snap.forEach(function (doc) {
+            var d = doc.data() || {};
+            rows.push({
+              wallet: typeof d.wallet === "string" ? d.wallet : doc.id,
+              points: tsNum(d.points), tickets: tsNum(d.tickets), qualified: !!d.qualified,
+              missionsWon: tsNum(d.missionsWon), missionsLost: tsNum(d.missionsLost),
+              maxTeamLevel: tsNum(d.maxTeamLevel), betDuelsPlayed: tsNum(d.betDuelsPlayed), betDuelsWon: tsNum(d.betDuelsWon)
+            });
+          });
+          leaderboardRows = rows;
+          leaderboardState = "ok";
+          renderRankingHeader();
+        }).catch(function (err) {
+          console.warn("[Armary] No se pudo leer el leaderboard; el juego sigue en local.", err);
+          leaderboardState = "error";
+          renderRankingHeader();
+        });
+      }
+      (function () { var b = $("rankRefreshBtn"); if (b) b.addEventListener("click", function () { fetchLeaderboard(); }); })();
+
       // ---------- Firebase: sesión con Google y guardado en la nube por wallet ----------
       // La wallet ES el usuario; Google es solo la puerta de acceso que las
       // reglas de Firestore exigen. La nube SOLO se usa cuando hay sesión
@@ -5252,6 +5458,31 @@
           fbDb.collection("saves").doc(pk).set(data).then(function () {
             if (ckey) cloudLastPushedKey = ckey;
             cloudLastError = false; cloudSyncedOk = true;
+            // Ranking Testnet (piggyback): SOLO con Google + wallet (ya
+            // garantizado aquí arriba), se SOBRESCRIBE el doc de la colección
+            // «leaderboard» con los valores CALCULADOS del snapshot que se
+            // acaba de subir. Nunca se incrementa en la nube, sin escrituras
+            // extra fuera de esta sincronización y sin bucles: este set no
+            // dispara ningún guardado. Si falla, el juego sigue en local.
+            try {
+              var lbStats = tsNorm(s.testnetStats || testnetStats);
+              var lbQualified = tsThresholdFrom(lbStats);
+              var lbDoc = {
+                wallet: pk,
+                points: tsPointsFrom(lbStats),
+                tickets: tsTicketsFrom(lbStats, lbQualified),
+                qualified: lbQualified,
+                missionsWon: lbStats.missionsWon,
+                missionsLost: lbStats.missionsLost,
+                maxTeamLevel: lbStats.maxTeamLevel,
+                betDuelsPlayed: lbStats.betDuelsPlayed,
+                betDuelsWon: lbStats.betDuelsWon,
+                updatedAtMs: Date.now()
+              };
+              fbDb.collection("leaderboard").doc(pk).set(lbDoc).catch(function (err) {
+                console.warn("[Armary] No se pudo actualizar el leaderboard; el juego sigue en local.", err);
+              });
+            } catch (lbErr) { console.warn("[Armary] Leaderboard no actualizado.", lbErr); }
             if (cloudWritePendingSnap && fbUser && walletPk === pk) { step(); return; }
             cloudWriteInFlight = false;
             cloudRefreshStatus();
@@ -5466,6 +5697,7 @@
           duelRecordTeam: duelRecordTeam,
           pvpHistory: pvpHistory,
           pvpDaily: pvpDaily,
+          testnetStats: tsNorm(testnetStats),
           activityHtml: $("activityList") ? $("activityList").innerHTML : ""
         };
       }
@@ -5536,6 +5768,11 @@
           if (typeof d.duelRecordTeam === "string") duelRecordTeam = d.duelRecordTeam;
           if (Array.isArray(d.pvpHistory)) pvpHistory = d.pvpHistory;
           if (d.pvpDaily && typeof d.pvpDaily.count === "number" && typeof d.pvpDaily.date === "string") pvpDaily = d.pvpDaily;
+          // Contadores Ranking Testnet: guardados viejos sin ellos arrancan en
+          // 0, salvo maxTeamLevel, inicializado desde los TEAMs existentes.
+          if (d.testnetStats && typeof d.testnetStats === "object") testnetStats = tsNorm(d.testnetStats);
+          else testnetStats = { missionsWon: 0, missionsLost: 0, maxTeamLevel: 0, betDuelsPlayed: 0, betDuelsWon: 0, betDuelsApplied: {} };
+          tsUpdateMaxLevel();
           if (typeof d.activityHtml === "string" && d.activityHtml) {
             $("activityList").innerHTML = d.activityHtml;
             $("activityEmpty").style.display = "none";
@@ -5585,6 +5822,8 @@
       function refreshAll() {
         settleRepairs();
         settleTeamLocks();
+        tsUpdateMaxLevel();
+        if (typeof renderRankingHeader === "function") renderRankingHeader();
         renderSoldiers();
         renderTransports();
         renderTeams();
