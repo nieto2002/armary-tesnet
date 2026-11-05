@@ -1216,6 +1216,15 @@
       .lb-pos.p1 { color: var(--gold); }
       .lb-wallet { font-family: "Press Start 2P", monospace; font-size: 0.72rem; min-width: 110px; }
       .lb-num { font-weight: 700; } .lb-num span { display: block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+      /* ---------- TAREAS · Misiones sociales (dentro de la vista Ranking) ---------- */
+      .task-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; background: var(--panel); border: 3px solid var(--edge); box-shadow: 5px 5px 0 var(--shadow); }
+      .task-list li { padding: 11px 16px; border-bottom: 2px dashed var(--edge-soft); font-size: 0.97rem; }
+      .task-list li:last-child { border-bottom: none; }
+      .task-list b { color: var(--accent); }
+      #rankSocialPoints { font-size: 0.95rem; font-weight: 700; color: var(--gold); margin: 0 0 16px; }
+      #rankSocialPoints:empty { display: none; }
+      .task-form { margin: 0 0 16px; }
+      .task-form a.btn { display: inline-block; text-decoration: none; }
       @media (max-width: 640px) { .lb-stats { grid-template-columns: 1fr; } .lb-row.head { display: none; } }
       @media (max-width: 900px) {
         .pvp-arena { flex-direction: column; }
@@ -1679,6 +1688,18 @@
         <p style="margin:0 0 16px"><button class="btn" type="button" id="rankRefreshBtn">Actualizar ranking</button></p>
         <div class="lb-list" id="leaderboardList" aria-label="Top 25 del ranking testnet"></div>
         <div id="rankOutside"></div>
+        <h2 class="section-title">TAREAS · MISIONES SOCIALES</h2>
+        <p class="section-sub">Las misiones sociales también dan puntos de ranking. La verificación es <b>manual</b>: envía tu prueba por el formulario y los puntos se suman al <b>cierre semanal</b>, tras la revisión.</p>
+        <p id="rankSocialPoints" aria-live="polite"></p>
+        <ul class="task-list">
+          <li>Seguir a @ArmaryNft — <b>+20 puntos</b>, una sola vez.</li>
+          <li>Retuit + me gusta al post de la semana — <b>+10 puntos</b> por semana.</li>
+          <li>Publica tu propio post en X sobre Armary (con enlace a armarynft.site) — <b>+25 puntos</b>, máx 1 por semana.</li>
+          <li>Vídeo o clip en TikTok o YouTube sobre Armary — <b>+50 puntos</b>, máx 1 por semana.</li>
+          <li><b>Tope social: 50 puntos por semana.</b></li>
+        </ul>
+        <p class="section-sub">Reglas: una cuenta por persona; un retuit por semana; no vale «el que más retuitee gana»; las pruebas se revisan antes de sumar puntos.</p>
+        <div class="task-form" id="socialFormArea"></div>
         <h2 class="section-title">PREMIOS (SOLO INFORMATIVO)</h2>
         <p class="section-sub">Los premios se entregan en mainnet como lista registrada de ganadores; aquí no se entrega ni se mintea nada. <b>Top 1 · pack Dorado:</b> 2 Cajas de Recluta + 1 Caja de Transporte + 10.000 $ARMY en municiones. <b>Top 2 · pack Plata:</b> 1 Caja de Recluta + 1 Caja de Transporte (sin municiones). <b>Top 3 · pack Bronce:</b> 1 Caja de Recluta. <b>Top 4–25 · pack Básico:</b> 1 soldado Común. Además, sorteo en vivo de un <b>soldado legendario único (1/1), potente, con XP 300</b>, entre los calificados según sus boletos, y <b>$ARMY posterior pendiente</b> de definir monto y tope. El <b>feedback verificado suma +50 en el cierre</b>, con revisión manual fuera del juego: no se cuenta automáticamente aquí.</p>
       </section>
@@ -1818,6 +1839,14 @@
       var builder = { transportIds: [], soldierIds: [], editingId: null, ammoPacks: 0 };
       var ammoShop = { teamId: null, packs: 1 };
       var disbandPendingId = null; // TEAM pendiente de confirmar el desarme (avisa de la pérdida de niveles)
+
+      // URL del formulario de Google para enviar las pruebas de las misiones
+      // sociales (sección TAREAS de la vista Ranking). Vacía = todavía no hay
+      // formulario: el botón «Enviar prueba» no se muestra y en su lugar sale
+      // el aviso de activación. Se rellena en una edición posterior. La
+      // verificación es manual: los puntos sociales los suma Joe a mano en la
+      // consola de Firestore, en el campo socialPoints del doc «leaderboard».
+      var SOCIAL_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScG4Usi5nthd7VOotJua3Tv4wyTqS2-rmEGL33nLjT2a6Z1mA/viewform";
 
       // ---------- Ranking Testnet: contadores (parte del guardado) ----------
       // Los puntos y boletos NUNCA se acumulan por separado: se calculan
@@ -5234,6 +5263,17 @@
         var qEl = $("rankMyQual");
         qEl.textContent = qual ? "CALIFICADO" : "NO CALIFICADO";
         qEl.style.color = qual ? "var(--ok)" : "var(--muted)";
+        // Puntos sociales propios (campo socialPoints de MI doc en
+        // «leaderboard», puesto a mano por Joe tras la revisión semanal):
+        // se muestran solo si son > 0. Número forzado con tsNum y texto
+        // escapado con escHtml.
+        var spEl = $("rankSocialPoints");
+        if (spEl) {
+          var mySocial = 0;
+          var myW = typeof walletPk !== "undefined" ? walletPk : null;
+          if (myW) { for (var si = 0; si < leaderboardRows.length; si++) { if (leaderboardRows[si].wallet === myW) { mySocial = tsNum(leaderboardRows[si].socialPoints); break; } } }
+          spEl.innerHTML = mySocial > 0 ? escHtml("+" + fmt(mySocial)) + " por tareas sociales" : "";
+        }
         var total = tsMissionsTotalFrom(testnetStats);
         $("rankProgress").innerHTML =
           "<span>Progreso: misiones <b>" + total + "/20</b></span>" +
@@ -5304,7 +5344,7 @@
             var d = doc.data() || {};
             rows.push({
               wallet: typeof d.wallet === "string" ? d.wallet : doc.id,
-              points: tsNum(d.points), tickets: tsNum(d.tickets), qualified: !!d.qualified,
+              points: tsNum(d.points), tickets: tsNum(d.tickets), qualified: !!d.qualified, socialPoints: tsNum(d.socialPoints),
               missionsWon: tsNum(d.missionsWon), missionsLost: tsNum(d.missionsLost),
               maxTeamLevel: tsNum(d.maxTeamLevel), betDuelsPlayed: tsNum(d.betDuelsPlayed), betDuelsWon: tsNum(d.betDuelsWon)
             });
@@ -5319,6 +5359,19 @@
         });
       }
       (function () { var b = $("rankRefreshBtn"); if (b) b.addEventListener("click", function () { fetchLeaderboard(); }); })();
+
+      // ---------- TAREAS · Misiones sociales: botón «Enviar prueba» ----------
+      // El botón SOLO se muestra si SOCIAL_FORM_URL tiene una URL. Mientras
+      // esté vacía, en su lugar se muestra el aviso de activación.
+      function renderSocialForm() {
+        var el = $("socialFormArea"); if (!el) return;
+        if (SOCIAL_FORM_URL) {
+          el.innerHTML = '<a class="btn" href="' + escHtml(SOCIAL_FORM_URL) + '" target="_blank" rel="noopener">Enviar prueba</a>';
+        } else {
+          el.innerHTML = '<p class="rank-note" style="margin:0">El formulario de envío se activa con la primera misión semanal.</p>';
+        }
+      }
+      renderSocialForm();
 
       // ---------- Firebase: sesión con Google y guardado en la nube por wallet ----------
       // La wallet ES el usuario; Google es solo la puerta de acceso que las
@@ -5467,20 +5520,43 @@
             try {
               var lbStats = tsNorm(s.testnetStats || testnetStats);
               var lbQualified = tsThresholdFrom(lbStats);
-              var lbDoc = {
-                wallet: pk,
-                points: tsPointsFrom(lbStats),
-                tickets: tsTicketsFrom(lbStats, lbQualified),
-                qualified: lbQualified,
-                missionsWon: lbStats.missionsWon,
-                missionsLost: lbStats.missionsLost,
-                maxTeamLevel: lbStats.maxTeamLevel,
-                betDuelsPlayed: lbStats.betDuelsPlayed,
-                betDuelsWon: lbStats.betDuelsWon,
-                updatedAtMs: Date.now()
+              var lbGamePoints = tsPointsFrom(lbStats);
+              var lbRef = fbDb.collection("leaderboard").doc(pk);
+              // Puntos sociales (campo socialPoints): los pone SOLO Joe a
+              // mano en la consola de Firestore, tras revisar las pruebas de
+              // las misiones sociales. Antes de sobrescribir se LEE el doc
+              // existente y se PRESERVA ese valor: el total guardado en
+              // «points» es puntos de juego + socialPoints, se guarda también
+              // el desglose socialPoints y los boletos se calculan desde el
+              // total. Si la lectura falla, se escribe SIN tocar el campo
+              // (set con merge y sin la clave socialPoints): NUNCA se pone
+              // a 0 a ciegas.
+              var lbWrite = function (socialPoints, preserveField) {
+                var lbTotal = lbGamePoints + socialPoints;
+                var lbDoc = {
+                  wallet: pk,
+                  points: lbTotal,
+                  tickets: lbQualified ? 1 + Math.floor(lbTotal / 100) : 0,
+                  qualified: lbQualified,
+                  missionsWon: lbStats.missionsWon,
+                  missionsLost: lbStats.missionsLost,
+                  maxTeamLevel: lbStats.maxTeamLevel,
+                  betDuelsPlayed: lbStats.betDuelsPlayed,
+                  betDuelsWon: lbStats.betDuelsWon,
+                  updatedAtMs: Date.now()
+                };
+                if (!preserveField) lbDoc.socialPoints = socialPoints;
+                var lbSet = preserveField ? lbRef.set(lbDoc, { merge: true }) : lbRef.set(lbDoc);
+                lbSet.catch(function (err) {
+                  console.warn("[Armary] No se pudo actualizar el leaderboard; el juego sigue en local.", err);
+                });
               };
-              fbDb.collection("leaderboard").doc(pk).set(lbDoc).catch(function (err) {
-                console.warn("[Armary] No se pudo actualizar el leaderboard; el juego sigue en local.", err);
+              lbRef.get().then(function (lbSnap) {
+                var sp = 0;
+                if (lbSnap && lbSnap.exists) { var ld = lbSnap.data() || {}; sp = tsNum(ld.socialPoints); }
+                lbWrite(sp, false);
+              }, function () {
+                lbWrite(0, true);
               });
             } catch (lbErr) { console.warn("[Armary] Leaderboard no actualizado.", lbErr); }
             if (cloudWritePendingSnap && fbUser && walletPk === pk) { step(); return; }
